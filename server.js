@@ -165,6 +165,7 @@ app.get('/api/leaderboard', async (req, res) => {
           prestigeCount: s.prestigeCount || 0,
           totalDonated: s.totalDonated || 0,
           streak: s.streak || 0,
+          equippedBadge: s.equippedBadge || null, // cosmetic only — safe to expose publicly
         });
       } catch { /* skip an unreadable/corrupt save rather than failing the whole list */ }
     }
