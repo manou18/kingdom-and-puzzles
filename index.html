@@ -48,7 +48,7 @@
   }
   button{font-family:inherit; cursor:pointer;}
   .app{
-    max-width:520px; margin:0 auto;
+    width:100%;
     padding:14px 14px 0;
     padding-top:var(--topbar-h);    /* clears the fixed topbar */
     padding-bottom:96px; /* clears the fixed bottom tab bar */
@@ -102,14 +102,18 @@
   }
   .topbar{
     display:flex; align-items:center; justify-content:space-between;
-    max-width:520px; margin:0 auto;
+    width:100%;
     padding:10px 14px;
     gap:10px;
   }
   .brand{display:flex; align-items:center; gap:8px; flex-shrink:0;}
   .brand .crest{font-size:22px; line-height:1;}
-  .pi-user{font-size:10px; color:var(--text-dim);}
+  .brand-text{display:flex; flex-direction:column; gap:2px; justify-content:center;}
+  .pi-user{font-size:10px; color:var(--text-dim); line-height:1.2;}
   .pi-user.linked{color:var(--green-bright); font-weight:700;}
+  /* Kingdom name sits under the username, leaving room beside the username
+     row (and beside this row too) for badges/icons to be added later. */
+  .kingdom-name{font-size:11px; color:var(--text); font-weight:700; line-height:1.2; display:flex; align-items:center; gap:4px;}
   .stats{
     display:flex; align-items:center; gap:8px;
     overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;
@@ -145,7 +149,7 @@
     padding-bottom:env(safe-area-inset-bottom, 0);
   }
   .tabnav{
-    display:flex; gap:4px; max-width:520px; margin:0 auto;
+    display:flex; gap:4px; width:100%;
     padding:7px 8px;
   }
   .tabnav::-webkit-scrollbar{display:none;}
@@ -581,7 +585,7 @@
   .modal{
     background:var(--bg-panel); border:1px solid var(--border);
     border-radius:18px 18px 0 0; padding:18px 16px 22px;
-    width:100%; max-width:520px; max-height:82vh; overflow-y:auto;
+    width:100%; max-height:82vh; overflow-y:auto;
   }
   .modal-handle{width:38px; height:4px; background:var(--border); border-radius:3px; margin:0 auto 14px;}
   .modal h2{margin:0 0 4px; font-size:16px; color:var(--gold-bright);}
@@ -658,7 +662,10 @@
     <div class="topbar">
       <div class="brand">
         <span class="crest">🏰</span>
-        <div class="pi-user" id="piUserLabel" style="display:none;"></div>
+        <div class="brand-text">
+          <div class="pi-user" id="piUserLabel" style="display:none;"></div>
+          <div class="kingdom-name" id="kingdomNameLabel" style="display:none;"></div>
+        </div>
       </div>
       <div class="stats">
         <div class="stat-divider"></div>
@@ -1300,6 +1307,28 @@ document.getElementById('overlay').addEventListener('click', (e)=>{
   if(e.target.id==='overlay') closeModal();
 });
 
+// Generic confirm-before-spending modal. Any action that charges gold,
+// gems, or consumes a limited resource (hint/axe/energy/freeze/etc) should
+// route through this instead of firing straight from the click handler —
+// a single tap should never silently charge or consume something without
+// the player explicitly confirming first. onConfirm only runs if the
+// player taps the confirm button; Cancel (or tapping outside) does nothing.
+function confirmAction({icon='🪙', title, desc, confirmLabel='Confirm', cancelLabel='Cancel', onConfirm}){
+  openModal(`
+    <h2>${icon} ${title}</h2>
+    <div class="sub">${desc}</div>
+    <div class="btn-row">
+      <button class="btn ghost block" id="confirmActionCancel">${cancelLabel}</button>
+      <button class="btn primary block" id="confirmActionOk">${confirmLabel}</button>
+    </div>
+  `);
+  document.getElementById('confirmActionCancel').addEventListener('click', closeModal);
+  document.getElementById('confirmActionOk').addEventListener('click', ()=>{
+    closeModal();
+    onConfirm();
+  });
+}
+
 /* ============================= RENDER: TOP BAR ============================= */
 
 function renderTopbar(){
@@ -1334,6 +1363,19 @@ function renderTopbar(){
       userLabel.textContent = '';
       userLabel.classList.remove('linked');
       userLabel.style.display = 'none';
+    }
+  }
+  // Kingdom name rendered under the username — leaves the row(s) free for
+  // equipped badges/frame icons to slot in alongside, without crowding
+  // the username itself.
+  const kingdomLabel = document.getElementById('kingdomNameLabel');
+  if(kingdomLabel){
+    if(piUser){
+      kingdomLabel.textContent = state.kingdomName;
+      kingdomLabel.style.display = '';
+    } else {
+      kingdomLabel.textContent = '';
+      kingdomLabel.style.display = 'none';
     }
   }
 }
@@ -1418,11 +1460,13 @@ function unlockRegion(regionId){
   if(!def || state.unlockedRegionIds.includes(regionId)) return;
   if(!isHomelandComplete()) return toast('Finish building on all 16 Homeland plots first');
   if(state.gold < def.unlockCost) return toast('Not enough gold to found this region yet');
-  state.gold -= def.unlockCost;
-  state.unlockedRegionIds.push(regionId);
-  state.regions[regionId] = { buildings: Array(16).fill(null) };
-  toast(`${def.icon} ${def.name} founded!`);
-  switchRegion(regionId);
+  confirmAction({icon:def.icon||'🗺️', title:`Found ${def.name}?`, desc:`Spend 🪙${def.unlockCost} gold to found ${def.name}?`, confirmLabel:`🪙${def.unlockCost} · Found`, onConfirm:()=>{
+    state.gold -= def.unlockCost;
+    state.unlockedRegionIds.push(regionId);
+    state.regions[regionId] = { buildings: Array(16).fill(null) };
+    toast(`${def.icon} ${def.name} founded!`);
+    switchRegion(regionId);
+  }});
 }
 
 function buildingCost(type, level){
@@ -1513,17 +1557,19 @@ const DONATION_AMOUNTS = [25, 100, 500];
 function donateGold(amount){
   if(amount<=0) return;
   if(state.gold < amount) return toast('Not enough gold');
-  state.gold -= amount;
-  const before = state.totalDonated;
-  state.totalDonated += amount;
-  const newlyUnlocked = MEMORIALS.filter(m=> before < m.threshold && state.totalDonated >= m.threshold);
-  if(newlyUnlocked.length){
-    const m = newlyUnlocked[newlyUnlocked.length-1];
-    toast(`${m.icon} ${m.name} unlocked! Donated 🪙${amount} to the Memorial Hall.`);
-  } else {
-    toast(`Donated 🪙${amount} to the Memorial Hall.`);
-  }
-  renderAll();
+  confirmAction({icon:'🏛️', title:'Donate to Memorial Hall', desc:`Donate 🪙${amount} gold to the Memorial Hall?`, confirmLabel:`🪙${amount} · Donate`, onConfirm:()=>{
+    state.gold -= amount;
+    const before = state.totalDonated;
+    state.totalDonated += amount;
+    const newlyUnlocked = MEMORIALS.filter(m=> before < m.threshold && state.totalDonated >= m.threshold);
+    if(newlyUnlocked.length){
+      const m = newlyUnlocked[newlyUnlocked.length-1];
+      toast(`${m.icon} ${m.name} unlocked! Donated 🪙${amount} to the Memorial Hall.`);
+    } else {
+      toast(`Donated 🪙${amount} to the Memorial Hall.`);
+    }
+    renderAll();
+  }});
 }
 
 function openPrestigeConfirm(){
@@ -1746,12 +1792,14 @@ function renderCity(){
     if(!state.merchant) return;
     if(state.gold < state.merchant.price) return toast('Not enough gold');
     const {buildingKey, skinIdx, price} = state.merchant;
-    state.gold -= price;
-    if(!state.skins[buildingKey]) state.skins[buildingKey] = [0];
-    if(!state.skins[buildingKey].includes(skinIdx)) state.skins[buildingKey].push(skinIdx);
-    toast(`${SHOP_SKINS[skinIdx]} ${BUILDING_TYPES[buildingKey].name} skin unlocked!`);
-    state.merchant = null; // one purchase per visit — the merchant returns again in a few days
-    renderAll();
+    confirmAction({icon:'🛒', title:'Buy from Merchant', desc:`Spend 🪙${price} gold on this ${BUILDING_TYPES[buildingKey].name} skin? The merchant only offers one purchase per visit.`, confirmLabel:`🪙${price} · Buy`, onConfirm:()=>{
+      state.gold -= price;
+      if(!state.skins[buildingKey]) state.skins[buildingKey] = [0];
+      if(!state.skins[buildingKey].includes(skinIdx)) state.skins[buildingKey].push(skinIdx);
+      toast(`${SHOP_SKINS[skinIdx]} ${BUILDING_TYPES[buildingKey].name} skin unlocked!`);
+      state.merchant = null; // one purchase per visit — the merchant returns again in a few days
+      renderAll();
+    }});
   });
 }
 
@@ -2187,7 +2235,7 @@ function renderPuzzlePlay(){
     }).join('');
 
     rowsHtml += `<div class="word-row ${isActive?'active':''} ${isDone?'done':''}" id="row-${wi}">
-      <div class="word-clue"><span>${wi+1}. ${isDone? w.word : w.clue}</span>${reqWord?`<span class="req-tag">⭐ Requested</span>`:''}${(!reqWord && isReview)?`<span class="review-tag">🔁 Review</span>`:''}</div>
+      <div class="word-clue"><span>${wi+1}. ${isDone? w.word : w.clue}</span>${reqWord?`<span class="req-tag">⭐ Requested</span>`:''}${(!reqWord && isReview)?`<span class="review-tag" title="Review words pay minimal gold">🔁 Review · 5% 🪙</span>`:''}</div>
       <div class="blanks">${blanksHtml}</div>
     </div>`;
   });
@@ -2259,15 +2307,22 @@ function renderPuzzlePlay(){
       if(count >= TRIBE_PLEA_MAX_PER_DAY) return;
       if(!activeWord.blanks.every(b=>b===null)) return; // only meant as a fresh-word head start
       const isFree = count === 0;
-      if(!isFree){
+      const doPlea = ()=>{
+        state.tribePleaCountToday = count + 1;
+        const wi = p.current; // snapshot — wordSolved() may advance p.current mid-loop
+        const revealCount = Math.min(2, activeWord.word.length);
+        for(let i=0;i<revealCount;i++) useHintLikeAxe(wi);
+        toast('📣 The tribe lends a hand — first letters revealed!');
+      };
+      if(isFree){
+        doPlea();
+      } else {
         if(state.gold < TRIBE_PLEA_GOLD_COST) return toast('Not enough gold');
-        state.gold -= TRIBE_PLEA_GOLD_COST;
+        confirmAction({icon:'📣', title:'Tribe Plea', desc:`Spend 🪙${TRIBE_PLEA_GOLD_COST} gold to reveal the first letters of this word?`, confirmLabel:`🪙${TRIBE_PLEA_GOLD_COST} · Plea`, onConfirm:()=>{
+          state.gold -= TRIBE_PLEA_GOLD_COST;
+          doPlea();
+        }});
       }
-      state.tribePleaCountToday = count + 1;
-      const wi = p.current; // snapshot — wordSolved() may advance p.current mid-loop
-      const revealCount = Math.min(2, activeWord.word.length);
-      for(let i=0;i<revealCount;i++) useHintLikeAxe(wi);
-      toast('📣 The tribe lends a hand — first letters revealed!');
     });
     const pleaBtnGem = document.getElementById('pleaBtnGem');
     if(pleaBtnGem) pleaBtnGem.addEventListener('click', ()=>{
@@ -2275,12 +2330,14 @@ function renderPuzzlePlay(){
       if(count >= TRIBE_PLEA_MAX_PER_DAY || count === 0) return; // gem button only shown for paid uses
       if(!activeWord.blanks.every(b=>b===null)) return;
       if((state.gems||0) < TRIBE_PLEA_GEM_COST) return toast('Not enough gems');
-      state.gems -= TRIBE_PLEA_GEM_COST;
-      state.tribePleaCountToday = count + 1;
-      const wi = p.current;
-      const revealCount = Math.min(2, activeWord.word.length);
-      for(let i=0;i<revealCount;i++) useHintLikeAxe(wi);
-      toast('📣 The tribe lends a hand — first letters revealed!');
+      confirmAction({icon:'📣', title:'Tribe Plea', desc:`Spend 💎${TRIBE_PLEA_GEM_COST} gems to reveal the first letters of this word?`, confirmLabel:`💎${TRIBE_PLEA_GEM_COST} · Plea`, onConfirm:()=>{
+        state.gems -= TRIBE_PLEA_GEM_COST;
+        state.tribePleaCountToday = count + 1;
+        const wi = p.current;
+        const revealCount = Math.min(2, activeWord.word.length);
+        for(let i=0;i<revealCount;i++) useHintLikeAxe(wi);
+        toast('📣 The tribe lends a hand — first letters revealed!');
+      }});
     });
   }
   wrap.querySelectorAll('.blank.filled').forEach(b=>{
@@ -2359,8 +2416,19 @@ function wordSolved(wi){
   const w = p.words[wi];
   w.solved = true;
   const diff = DIFFICULTY[p.difficulty];
-  const base = diff.rewardPerWord;
-  const bonus = w.flawless ? Math.round(diff.rewardPerWord*0.25) : 0;
+
+  // Review words (already in wordMemory — i.e. previously solved at least
+  // once) pay a reduced base reward. Full reward is reserved for genuinely
+  // new words; otherwise a player could deliberately fumble an easy word
+  // to keep it cycling back via spaced repetition and farm full gold
+  // indefinitely without learning anything new — that's a real economy
+  // leak, not just a theoretical one, since due words get first pick over
+  // fresh words every puzzle.
+  const priorMem = state.wordMemory[p.category] && state.wordMemory[p.category][w.word];
+  const isReview = !!priorMem;
+  const REVIEW_REWARD_FACTOR = 0.05;
+  const base = isReview ? Math.round(diff.rewardPerWord * REVIEW_REWARD_FACTOR) : diff.rewardPerWord;
+  const bonus = w.flawless ? Math.round(base*0.25) : 0;
   let gained = base + bonus;
 
   const reqWord = isRequestWord(p.category, w.word);
@@ -3111,59 +3179,85 @@ function renderShop(){
 
   document.getElementById('buyHints').addEventListener('click', ()=>{
     if(state.gold<30) return toast('Not enough gold');
-    state.gold-=30; state.hints+=3; toast('+3 hints'); renderAll();
+    confirmAction({icon:'💡', title:'Buy Hints', desc:'Spend 🪙30 gold for +3 hints?', confirmLabel:'🪙30 · Buy', onConfirm:()=>{
+      state.gold-=30; state.hints+=3; toast('+3 hints'); renderAll();
+    }});
   });
   document.getElementById('buyAxe').addEventListener('click', ()=>{
     if(state.gold<15) return toast('Not enough gold');
-    state.gold-=15; state.axes+=1; toast('+1 Golden Axe'); renderAll();
+    confirmAction({icon:'🪓', title:'Buy Golden Axe', desc:'Spend 🪙15 gold for +1 Golden Axe?', confirmLabel:'🪙15 · Buy', onConfirm:()=>{
+      state.gold-=15; state.axes+=1; toast('+1 Golden Axe'); renderAll();
+    }});
   });
   document.getElementById('buyEnergy').addEventListener('click', ()=>{
     if(state.gold<25) return toast('Not enough gold');
-    state.gold-=25; state.energy+=2; toast('+2 energy'); renderAll();
+    confirmAction({icon:'⚡', title:'Buy Energy', desc:'Spend 🪙25 gold for +2 energy?', confirmLabel:'🪙25 · Buy', onConfirm:()=>{
+      state.gold-=25; state.energy+=2; toast('+2 energy'); renderAll();
+    }});
   });
   document.getElementById('buyFreeze').addEventListener('click', ()=>{
     if(state.streakFreezes>=3) return toast('You already hold the max 3 freezes');
     if(state.gold<40) return toast('Not enough gold');
-    state.gold-=40; state.streakFreezes+=1; toast('🧊 +1 Streak Freeze'); renderAll();
+    confirmAction({icon:'🧊', title:'Buy Streak Freeze', desc:'Spend 🪙40 gold for +1 Streak Freeze?', confirmLabel:'🪙40 · Buy', onConfirm:()=>{
+      state.gold-=40; state.streakFreezes+=1; toast('🧊 +1 Streak Freeze'); renderAll();
+    }});
   });
   document.getElementById('buyHintsGem').addEventListener('click', ()=>{
     if((state.gems||0)<90) return toast('Not enough gems');
-    state.gems-=90; state.hints+=3; toast('💎 +3 hints'); renderAll();
+    confirmAction({icon:'💡', title:'Buy Hints', desc:'Spend 💎90 gems for +3 hints?', confirmLabel:'💎90 · Buy', onConfirm:()=>{
+      state.gems-=90; state.hints+=3; toast('💎 +3 hints'); renderAll();
+    }});
   });
   document.getElementById('buyAxeGem').addEventListener('click', ()=>{
     if((state.gems||0)<45) return toast('Not enough gems');
-    state.gems-=45; state.axes+=1; toast('💎 +1 Golden Axe'); renderAll();
+    confirmAction({icon:'🪓', title:'Buy Golden Axe', desc:'Spend 💎45 gems for +1 Golden Axe?', confirmLabel:'💎45 · Buy', onConfirm:()=>{
+      state.gems-=45; state.axes+=1; toast('💎 +1 Golden Axe'); renderAll();
+    }});
   });
   document.getElementById('buyEnergyGem').addEventListener('click', ()=>{
     if((state.gems||0)<75) return toast('Not enough gems');
-    state.gems-=75; state.energy+=2; toast('💎 +2 energy'); renderAll();
+    confirmAction({icon:'⚡', title:'Buy Energy', desc:'Spend 💎75 gems for +2 energy?', confirmLabel:'💎75 · Buy', onConfirm:()=>{
+      state.gems-=75; state.energy+=2; toast('💎 +2 energy'); renderAll();
+    }});
   });
   document.getElementById('buyFreezeGem').addEventListener('click', ()=>{
     if(state.streakFreezes>=3) return toast('You already hold the max 3 freezes');
     if((state.gems||0)<120) return toast('Not enough gems');
-    state.gems-=120; state.streakFreezes+=1; toast('💎🧊 +1 Streak Freeze'); renderAll();
+    confirmAction({icon:'🧊', title:'Buy Streak Freeze', desc:'Spend 💎120 gems for +1 Streak Freeze?', confirmLabel:'💎120 · Buy', onConfirm:()=>{
+      state.gems-=120; state.streakFreezes+=1; toast('💎🧊 +1 Streak Freeze'); renderAll();
+    }});
   });
   document.getElementById('buyBooster').addEventListener('click', ()=>{
     if(state.gold<60) return toast('Not enough gold');
-    state.gold-=60; state.boosterPuzzlesLeft+=3; toast('📈 Booster active for your next 3 puzzles'); renderAll();
+    confirmAction({icon:'📈', title:'Buy Booster', desc:'Spend 🪙60 gold for a booster active on your next 3 puzzles?', confirmLabel:'🪙60 · Buy', onConfirm:()=>{
+      state.gold-=60; state.boosterPuzzlesLeft+=3; toast('📈 Booster active for your next 3 puzzles'); renderAll();
+    }});
   });
   document.getElementById('buyBoosterGem').addEventListener('click', ()=>{
     if((state.gems||0)<150) return toast('Not enough gems');
-    state.gems-=150; state.boosterPuzzlesLeft+=3; toast('💎📈 Booster active for your next 3 puzzles'); renderAll();
+    confirmAction({icon:'📈', title:'Buy Booster', desc:'Spend 💎150 gems for a booster active on your next 3 puzzles?', confirmLabel:'💎150 · Buy', onConfirm:()=>{
+      state.gems-=150; state.boosterPuzzlesLeft+=3; toast('💎📈 Booster active for your next 3 puzzles'); renderAll();
+    }});
   });
   const buyAutoHarvest = document.getElementById('buyAutoHarvest');
   if(buyAutoHarvest) buyAutoHarvest.addEventListener('click', ()=>{
     if(state.gold<100) return toast('Not enough gold');
-    state.gold-=100; state.autoHarvest=true; toast('⚙️ Auto-Harvest active from tomorrow on'); renderAll();
+    confirmAction({icon:'⚙️', title:'Buy Auto-Harvest', desc:'Spend 🪙100 gold to make Auto-Harvest active from tomorrow on?', confirmLabel:'🪙100 · Buy', onConfirm:()=>{
+      state.gold-=100; state.autoHarvest=true; toast('⚙️ Auto-Harvest active from tomorrow on'); renderAll();
+    }});
   });
   const buyAutoHarvestGem = document.getElementById('buyAutoHarvestGem');
   if(buyAutoHarvestGem) buyAutoHarvestGem.addEventListener('click', ()=>{
     if((state.gems||0)<300) return toast('Not enough gems');
-    state.gems-=300; state.autoHarvest=true; toast('💎⚙️ Auto-Harvest active from tomorrow on'); renderAll();
+    confirmAction({icon:'⚙️', title:'Buy Auto-Harvest', desc:'Spend 💎300 gems to make Auto-Harvest active from tomorrow on?', confirmLabel:'💎300 · Buy', onConfirm:()=>{
+      state.gems-=300; state.autoHarvest=true; toast('💎⚙️ Auto-Harvest active from tomorrow on'); renderAll();
+    }});
   });
   document.getElementById('convertGems').addEventListener('click', ()=>{
     if((state.gems||0)<10) return toast('Need at least 10 gems to convert');
-    state.gems-=10; addGold(25); toast('Converted 💎10 → 🪙25'); renderAll();
+    confirmAction({icon:'🔄', title:'Convert Gems', desc:'Convert 💎10 gems into 🪙25 gold?', confirmLabel:'Convert', onConfirm:()=>{
+      state.gems-=10; addGold(25); toast('Converted 💎10 → 🪙25'); renderAll();
+    }});
   });
   document.getElementById('buyPatron').addEventListener('click', becomePatron);
   document.getElementById('buyPatronPlus').addEventListener('click', becomePatronPlus);
@@ -3182,12 +3276,14 @@ function renderShop(){
       const key = btn.dataset.buylegendary;
       if((state.skins[key]||[0]).includes(3)) return;
       if((state.gems||0) < 30) return toast('Not enough gems');
-      state.gems -= 30;
-      if(!state.skins[key]) state.skins[key] = [0];
-      state.skins[key].push(3);
-      state.equippedSkin[key] = 3;
-      toast(`👑 Legendary ${BUILDING_TYPES[key].name} skin unlocked!`);
-      renderAll();
+      confirmAction({icon:'👑', title:'Buy Legendary Skin', desc:`Spend 💎30 gems to unlock the legendary ${BUILDING_TYPES[key].name} skin?`, confirmLabel:'💎30 · Buy', onConfirm:()=>{
+        state.gems -= 30;
+        if(!state.skins[key]) state.skins[key] = [0];
+        state.skins[key].push(3);
+        state.equippedSkin[key] = 3;
+        toast(`👑 Legendary ${BUILDING_TYPES[key].name} skin unlocked!`);
+        renderAll();
+      }});
     });
   });
   wrap.querySelectorAll('[data-buyskin]').forEach(btn=>{
@@ -3199,11 +3295,13 @@ function renderShop(){
       const unowned = def.colors.map((_,i)=>i).find(i=>!state.skins[key].includes(i));
       if(unowned===undefined) return toast('All standard skins unlocked');
       if(state.gold<20) return toast('Not enough gold');
-      state.gold-=20;
-      state.skins[key].push(unowned);
-      state.equippedSkin[key]=unowned;
-      toast(`${def.name} skin unlocked!`);
-      renderAll();
+      confirmAction({icon:'🎨', title:'Buy Skin', desc:`Spend 🪙20 gold to unlock a new ${def.name} skin?`, confirmLabel:'🪙20 · Buy', onConfirm:()=>{
+        state.gold-=20;
+        state.skins[key].push(unowned);
+        state.equippedSkin[key]=unowned;
+        toast(`${def.name} skin unlocked!`);
+        renderAll();
+      }});
     });
   });
   wrap.querySelectorAll('[data-buybadge]').forEach(btn=>{
@@ -3419,13 +3517,29 @@ function renderLeaderboardList(){
     });
   });
   listEl.querySelectorAll('[data-giftgold]').forEach(btn=>{
-    btn.addEventListener('click', ()=> sendGift(btn.dataset.giftrecipient, 'gold', null, parseInt(btn.dataset.giftgold,10)));
+    btn.addEventListener('click', ()=>{
+      const amount = parseInt(btn.dataset.giftgold,10);
+      const recipient = btn.dataset.giftrecipient.replace(/^pi_|^guest_/,'');
+      confirmAction({icon:'🎁', title:'Send Gift', desc:`Send 🪙${amount} gold to ${recipient}?`, confirmLabel:`🪙${amount} · Send`, onConfirm:()=>{
+        sendGift(btn.dataset.giftrecipient, 'gold', null, amount);
+      }});
+    });
   });
   listEl.querySelectorAll('[data-giftbadge]').forEach(btn=>{
-    btn.addEventListener('click', ()=> sendGift(btn.dataset.giftrecipient, 'badge', btn.dataset.giftbadge));
+    btn.addEventListener('click', ()=>{
+      const recipient = btn.dataset.giftrecipient.replace(/^pi_|^guest_/,'');
+      confirmAction({icon:'🎁', title:'Send Gift', desc:`Send this badge to ${recipient}? You'll no longer be able to equip it yourself.`, confirmLabel:'Send Gift', onConfirm:()=>{
+        sendGift(btn.dataset.giftrecipient, 'badge', btn.dataset.giftbadge);
+      }});
+    });
   });
   listEl.querySelectorAll('[data-giftframe]').forEach(btn=>{
-    btn.addEventListener('click', ()=> sendGift(btn.dataset.giftrecipient, 'frame', btn.dataset.giftframe));
+    btn.addEventListener('click', ()=>{
+      const recipient = btn.dataset.giftrecipient.replace(/^pi_|^guest_/,'');
+      confirmAction({icon:'🎁', title:'Send Gift', desc:`Send this frame to ${recipient}? You'll no longer be able to equip it yourself.`, confirmLabel:'Send Gift', onConfirm:()=>{
+        sendGift(btn.dataset.giftrecipient, 'frame', btn.dataset.giftframe);
+      }});
+    });
   });
 }
 
@@ -3668,8 +3782,8 @@ async function renderMarketplacePanel(){
       <div class="market-name">${name}</div>
       <div class="market-seller">${isMine ? 'Your listing' : seller}</div>
       ${isMine
-        ? `<button class="btn ghost small market-action" data-cancellisting="${l.id}">Cancel · 🪙${l.price}</button>`
-        : `<button class="btn primary small market-action" data-buylisting="${l.id}" ${canAfford?'':'disabled'}>🪙${l.price}</button>`
+        ? `<button class="btn ghost small market-action" data-cancellisting="${l.id}" data-listname="${escapeHtml(name)}" data-listprice="${l.price}">Cancel · 🪙${l.price}</button>`
+        : `<button class="btn primary small market-action" data-buylisting="${l.id}" data-listname="${escapeHtml(name)}" data-listprice="${l.price}" ${canAfford?'':'disabled'}>🪙${l.price}</button>`
       }
     </div>`;
   }
@@ -3682,37 +3796,44 @@ async function renderMarketplacePanel(){
     : `<p class="panel-sub market-empty">You have nothing listed. Pick an owned skin above and tap "List".</p>`;
 
   listArea.querySelectorAll('[data-buylisting]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      btn.disabled = true; btn.textContent = '…';
-      try{
-        const res = await fetch(`${API_BASE}/market/buy`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ listingId: btn.dataset.buylisting, buyerId: myId }),
-        });
-        const data = await res.json();
-        if(!res.ok){ toast(data.error || 'Purchase failed'); btn.disabled=false; return; }
-        state.gold -= data.paid;
-        toast(`Bought for 🪙${data.paid}!`);
-        const fresh = await loadRemote();
-        if(fresh) state = fresh;
-        renderAll();
-      }catch(e){ toast('Purchase failed — try again.'); btn.disabled=false; }
+    btn.addEventListener('click', ()=>{
+      const price = btn.dataset.listprice;
+      const name = btn.dataset.listname;
+      confirmAction({icon:'🛒', title:'Buy Listing', desc:`Buy ${name} for 🪙${price} gold from this player's listing?`, confirmLabel:`🪙${price} · Buy`, onConfirm: async ()=>{
+        btn.disabled = true; btn.textContent = '…';
+        try{
+          const res = await fetch(`${API_BASE}/market/buy`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ listingId: btn.dataset.buylisting, buyerId: myId }),
+          });
+          const data = await res.json();
+          if(!res.ok){ toast(data.error || 'Purchase failed'); btn.disabled=false; return; }
+          state.gold -= data.paid;
+          toast(`Bought for 🪙${data.paid}!`);
+          const fresh = await loadRemote();
+          if(fresh) state = fresh;
+          renderAll();
+        }catch(e){ toast('Purchase failed — try again.'); btn.disabled=false; }
+      }});
     });
   });
   mineArea.querySelectorAll('[data-cancellisting]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      btn.disabled = true;
-      try{
-        const res = await fetch(`${API_BASE}/market/cancel`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ listingId: btn.dataset.cancellisting, sellerId: myId }),
-        });
-        if(!res.ok){ toast('Could not cancel listing'); btn.disabled=false; return; }
-        toast('Listing cancelled, skin returned.');
-        const fresh = await loadRemote();
-        if(fresh) state = fresh;
-        renderAll();
-      }catch(e){ toast('Could not cancel listing — try again.'); btn.disabled=false; }
+    btn.addEventListener('click', ()=>{
+      const name = btn.dataset.listname;
+      confirmAction({icon:'🗑️', title:'Cancel Listing', desc:`Cancel your listing for ${name}? The skin will be returned to you.`, confirmLabel:'Cancel Listing', onConfirm: async ()=>{
+        btn.disabled = true;
+        try{
+          const res = await fetch(`${API_BASE}/market/cancel`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ listingId: btn.dataset.cancellisting, sellerId: myId }),
+          });
+          if(!res.ok){ toast('Could not cancel listing'); btn.disabled=false; return; }
+          toast('Listing cancelled, skin returned.');
+          const fresh = await loadRemote();
+          if(fresh) state = fresh;
+          renderAll();
+        }catch(e){ toast('Could not cancel listing — try again.'); btn.disabled=false; }
+      }});
     });
   });
 
@@ -3867,7 +3988,9 @@ const GEM_PACKS = [
   { gems:650, piPrice:5, bestValue:true },
 ];
 function buyGemPack(pack){
-  purchaseWithPi(pack.piPrice, `${pack.gems} Gems — Kingdoms & Words`, { kind:'gems', gems:pack.gems });
+  confirmAction({icon:'💎', title:'Buy Gems', desc:`Purchase ${pack.gems} gems for π${pack.piPrice}? You'll confirm the payment in your Pi wallet next.`, confirmLabel:`π${pack.piPrice} · Continue`, onConfirm:()=>{
+    purchaseWithPi(pack.piPrice, `${pack.gems} Gems — Kingdoms & Words`, { kind:'gems', gems:pack.gems });
+  }});
 }
 
 // Direct Gold purchase with real Pi — a convenience option alongside the
@@ -3882,7 +4005,9 @@ const GOLD_PACKS = [
   { gold:900, piPrice:5, bestValue:true },
 ];
 function buyGoldPack(pack){
-  purchaseWithPi(pack.piPrice, `${pack.gold} Gold — Kingdoms & Words`, { kind:'gold', gold:pack.gold });
+  confirmAction({icon:'🪙', title:'Buy Gold', desc:`Purchase ${pack.gold} gold for π${pack.piPrice}? You'll confirm the payment in your Pi wallet next.`, confirmLabel:`π${pack.piPrice} · Continue`, onConfirm:()=>{
+    purchaseWithPi(pack.piPrice, `${pack.gold} Gold — Kingdoms & Words`, { kind:'gold', gold:pack.gold });
+  }});
 }
 
 // Cosmetic-only social badges — shown next to your name in Rankings and on
@@ -4036,17 +4161,20 @@ function buyBadge(id, currency){
   if(!b) return;
   state.ownedBadges = state.ownedBadges || [];
   if(state.ownedBadges.includes(id)) return;
+  const price = currency==='gems' ? b.gemPrice : b.goldPrice;
+  const label = currency==='gems' ? `💎${price}` : `🪙${price}`;
   if(currency==='gems'){
     if((state.gems||0) < b.gemPrice) return toast('Not enough gems');
-    state.gems -= b.gemPrice;
   } else {
     if(state.gold < b.goldPrice) return toast('Not enough gold');
-    state.gold -= b.goldPrice;
   }
-  state.ownedBadges.push(id);
-  toast(`${b.icon} ${b.name} unlocked!`);
-  checkCollections();
-  renderAll();
+  confirmAction({icon:b.icon, title:`Buy ${b.name}`, desc:`Spend ${label} to unlock ${b.icon} ${b.name}?`, confirmLabel:`${label} · Buy`, onConfirm:()=>{
+    if(currency==='gems') state.gems -= b.gemPrice; else state.gold -= b.goldPrice;
+    state.ownedBadges.push(id);
+    toast(`${b.icon} ${b.name} unlocked!`);
+    checkCollections();
+    renderAll();
+  }});
 }
 function equipBadge(id){
   state.ownedBadges = state.ownedBadges || [];
@@ -4060,16 +4188,19 @@ function buyFrame(id, currency){
   if(!f) return;
   state.ownedFrames = state.ownedFrames || [];
   if(state.ownedFrames.includes(id)) return;
+  const price = currency==='gems' ? f.gemPrice : f.goldPrice;
+  const label = currency==='gems' ? `💎${price}` : `🪙${price}`;
   if(currency==='gems'){
     if((state.gems||0) < f.gemPrice) return toast('Not enough gems');
-    state.gems -= f.gemPrice;
   } else {
     if(state.gold < f.goldPrice) return toast('Not enough gold');
-    state.gold -= f.goldPrice;
   }
-  state.ownedFrames.push(id);
-  toast(`${f.name} unlocked!`);
-  renderAll();
+  confirmAction({icon:'🖼️', title:`Buy ${f.name}`, desc:`Spend ${label} to unlock ${f.name}?`, confirmLabel:`${label} · Buy`, onConfirm:()=>{
+    if(currency==='gems') state.gems -= f.gemPrice; else state.gold -= f.goldPrice;
+    state.ownedFrames.push(id);
+    toast(`${f.name} unlocked!`);
+    renderAll();
+  }});
 }
 function equipFrame(id){
   state.ownedFrames = state.ownedFrames || [];
@@ -4112,16 +4243,19 @@ function buyEffect(id, currency){
   if(!e) return;
   state.ownedEffects = state.ownedEffects || [];
   if(state.ownedEffects.includes(id)) return;
+  const price = currency==='gems' ? e.gemPrice : e.goldPrice;
+  const label = currency==='gems' ? `💎${price}` : `🪙${price}`;
   if(currency==='gems'){
     if((state.gems||0) < e.gemPrice) return toast('Not enough gems');
-    state.gems -= e.gemPrice;
   } else {
     if(state.gold < e.goldPrice) return toast('Not enough gold');
-    state.gold -= e.goldPrice;
   }
-  state.ownedEffects.push(id);
-  toast(`${e.icon} ${e.name} unlocked!`);
-  renderAll();
+  confirmAction({icon:e.icon, title:`Buy ${e.name}`, desc:`Spend ${label} to unlock ${e.icon} ${e.name}?`, confirmLabel:`${label} · Buy`, onConfirm:()=>{
+    if(currency==='gems') state.gems -= e.gemPrice; else state.gold -= e.goldPrice;
+    state.ownedEffects.push(id);
+    toast(`${e.icon} ${e.name} unlocked!`);
+    renderAll();
+  }});
 }
 function equipEffect(id){
   // 'none' (or unowned ids, defensively) always resolves to turning effects off.
@@ -4178,10 +4312,14 @@ function isPatronPlusActive(){
   return isPatronActive() && state.patronTier === 'plus';
 }
 function becomePatron(){
-  purchaseWithPi(PATRON_PRICE_PI, `Kingdom Patron — ${PATRON_DAYS} days`, { kind:'patron', days:PATRON_DAYS });
+  confirmAction({icon:'🎖️', title:'Become Patron', desc:`Subscribe to Kingdom Patron for π${PATRON_PRICE_PI} (${PATRON_DAYS} days)? You'll confirm the payment in your Pi wallet next.`, confirmLabel:`π${PATRON_PRICE_PI} · Continue`, onConfirm:()=>{
+    purchaseWithPi(PATRON_PRICE_PI, `Kingdom Patron — ${PATRON_DAYS} days`, { kind:'patron', days:PATRON_DAYS });
+  }});
 }
 function becomePatronPlus(){
-  purchaseWithPi(PATRON_PLUS_PRICE_PI, `Kingdom Patron+ — ${PATRON_PLUS_DAYS} days`, { kind:'patron', days:PATRON_PLUS_DAYS, tier:'plus' });
+  confirmAction({icon:'🎖️', title:'Become Patron+', desc:`Subscribe to Kingdom Patron+ for π${PATRON_PLUS_PRICE_PI} (${PATRON_PLUS_DAYS} days)? You'll confirm the payment in your Pi wallet next.`, confirmLabel:`π${PATRON_PLUS_PRICE_PI} · Continue`, onConfirm:()=>{
+    purchaseWithPi(PATRON_PLUS_PRICE_PI, `Kingdom Patron+ — ${PATRON_PLUS_DAYS} days`, { kind:'patron', days:PATRON_PLUS_DAYS, tier:'plus' });
+  }});
 }
 
 /* ============================= SAVE / LOAD ============================= *
@@ -4310,16 +4448,19 @@ function buyAura(id, currency){
   if(!a) return;
   state.ownedAuras = state.ownedAuras || [];
   if(state.ownedAuras.includes(id)) return;
+  const price = currency==='gems' ? a.gemPrice : a.goldPrice;
+  const label = currency==='gems' ? `💎${price}` : `🪙${price}`;
   if(currency==='gems'){
     if((state.gems||0) < a.gemPrice) return toast('Not enough gems');
-    state.gems -= a.gemPrice;
   } else {
     if(state.gold < a.goldPrice) return toast('Not enough gold');
-    state.gold -= a.goldPrice;
   }
-  state.ownedAuras.push(id);
-  toast(`${a.name} unlocked!`);
-  renderAll();
+  confirmAction({icon:'✨', title:`Buy ${a.name}`, desc:`Spend ${label} to unlock ${a.name}?`, confirmLabel:`${label} · Buy`, onConfirm:()=>{
+    if(currency==='gems') state.gems -= a.gemPrice; else state.gold -= a.goldPrice;
+    state.ownedAuras.push(id);
+    toast(`${a.name} unlocked!`);
+    renderAll();
+  }});
 }
 function equipAura(id){
   state.ownedAuras = state.ownedAuras || [];
@@ -4432,16 +4573,19 @@ function buySoundPack(id, currency){
   if(!p) return;
   state.ownedSoundPacks = state.ownedSoundPacks || [];
   if(state.ownedSoundPacks.includes(id)) return;
+  const price = currency==='gems' ? p.gemPrice : p.goldPrice;
+  const label = currency==='gems' ? `💎${price}` : `🪙${price}`;
   if(currency==='gems'){
     if((state.gems||0) < p.gemPrice) return toast('Not enough gems');
-    state.gems -= p.gemPrice;
   } else {
     if(state.gold < p.goldPrice) return toast('Not enough gold');
-    state.gold -= p.goldPrice;
   }
-  state.ownedSoundPacks.push(id);
-  toast(`${p.name} unlocked!`);
-  renderAll();
+  confirmAction({icon:'🔊', title:`Buy ${p.name}`, desc:`Spend ${label} to unlock ${p.name}?`, confirmLabel:`${label} · Buy`, onConfirm:()=>{
+    if(currency==='gems') state.gems -= p.gemPrice; else state.gold -= p.goldPrice;
+    state.ownedSoundPacks.push(id);
+    toast(`${p.name} unlocked!`);
+    renderAll();
+  }});
 }
 function equipSoundPack(id){
   state.ownedSoundPacks = state.ownedSoundPacks || [];
