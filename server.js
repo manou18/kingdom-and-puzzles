@@ -126,7 +126,18 @@ app.post('/api/state/:playerId', async (req, res) => {
   if (rateLimited(`save:${playerId}`)) return res.status(429).json({ error: 'too many saves, slow down' });
   try {
     await ensureDirs();
-    await withLock(`player:${playerId}`, () => writePlayerState(playerId, req.body));
+    await withLock(`player:${playerId}`, async () => {
+      const existing = await readPlayerState(playerId);
+      const toSave = { ...req.body };
+      // accountCreatedAt is server-authoritative: set once, the first time
+      // this server ever sees a save for this account, and never moved
+      // afterward — never trusted from whatever (if anything) the client
+      // sends for it. This is what gates STARTER_OFFER_* eligibility above,
+      // so a reinstall or a locally-edited save can't reset or fast-forward
+      // through the 4-week window.
+      toSave.accountCreatedAt = (existing && existing.accountCreatedAt) || Date.now();
+      await writePlayerState(playerId, toSave);
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error('Write error:', err);
@@ -218,7 +229,28 @@ async function piApi(pathSuffix, options = {}) {
 // alternative to gems, priced worse per-Pi client-side — see GOLD_PACKS in
 // index.html). patron: extends patronUntil by N days, optionally tagged
 // with tier:'plus' for the pricier Patron+ offer (bigger gem trickle,
-// exclusive badge/frame — see applyGrant below).
+// exclusive badge/frame — see applyGrant below). starter: one claim per
+// calendar week of the 4-week onboarding series (see STARTER_OFFER_* in
+// index.html) — its Pi amount, weekly gem tiers, and eligibility window are
+// all fixed/derived server-side here, never trusted from the client, and
+// the once-per-week cap is enforced against state.starterOfferClaimedWeeks
+// and state.accountCreatedAt (itself set authoritatively the first time this
+// server ever saves the account — see POST /api/state/:playerId below).
+const STARTER_OFFER_PI = 0.2;
+const STARTER_OFFER_WEEKLY_GEMS = [18, 14, 10, 8]; // week 1..4 (index 0..3)
+const STARTER_OFFER_DAYS = 28; // whole series closes for good this many days after account creation
+
+// Returns 0-3 for "this account is currently in week N of the series", or
+// -1 if not eligible (unknown creation time, or past the window). Mirrors
+// starterOfferWeekIndex() in index.html but this copy is the one that
+// actually gates a real payment.
+function starterOfferWeekIndexFor(accountCreatedAt) {
+  if (!accountCreatedAt) return -1;
+  const daysSince = (Date.now() - accountCreatedAt) / 86400000;
+  if (daysSince < 0 || daysSince >= STARTER_OFFER_DAYS) return -1;
+  return Math.floor(daysSince / 7);
+}
+
 function isGrantableMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') return false;
   if (metadata.kind === 'gems') return Number.isInteger(metadata.gems) && metadata.gems > 0 && metadata.gems <= 100000;
@@ -227,6 +259,12 @@ function isGrantableMetadata(metadata) {
     if (!Number.isInteger(metadata.days) || metadata.days <= 0 || metadata.days > 366) return false;
     if (metadata.tier !== undefined && metadata.tier !== 'basic' && metadata.tier !== 'plus') return false;
     return true;
+  }
+  if (metadata.kind === 'starter') {
+    // Only a sanity check here (a real gem tier value) — actual week
+    // eligibility and the per-week cap are checked in /approve below, where
+    // we have the account's own records to check against.
+    return STARTER_OFFER_WEEKLY_GEMS.includes(metadata.gems);
   }
   return false;
 }
@@ -242,12 +280,39 @@ app.post('/api/payments/approve', async (req, res) => {
     if (!isGrantableMetadata(info.data.metadata)) {
       return res.status(400).json({ error: 'payment metadata does not match an offer this server grants' });
     }
+    let starterWeekIndex;
+    if (info.data.metadata.kind === 'starter') {
+      // Fixed-price offer: the amount Pi says was actually paid must match
+      // the fixed Pi price exactly, and this account's own current week
+      // must not already be claimed — both checked against our own
+      // records, never the client's claimed weekIndex.
+      if (typeof info.data.amount !== 'number' || Math.abs(info.data.amount - STARTER_OFFER_PI) > 1e-6) {
+        return res.status(400).json({ error: 'starter offer amount does not match the fixed price' });
+      }
+      const existing = await readPlayerState(playerId);
+      starterWeekIndex = starterOfferWeekIndexFor(existing && existing.accountCreatedAt);
+      if (starterWeekIndex === -1) {
+        return res.status(400).json({ error: 'starter offer is not available for this account right now' });
+      }
+      const claimed = (existing && existing.starterOfferClaimedWeeks) || [];
+      if (claimed.includes(starterWeekIndex)) {
+        return res.status(400).json({ error: "this week's starter offer has already been claimed" });
+      }
+      const expectedGems = STARTER_OFFER_WEEKLY_GEMS[starterWeekIndex];
+      if (info.data.metadata.gems !== expectedGems) {
+        return res.status(400).json({ error: "starter offer gem amount does not match this account's current week tier" });
+      }
+    }
     const approve = await piApi(`/payments/${paymentId}/approve`, { method: 'POST' });
     if (!approve.ok) return res.status(502).json({ error: 'Pi approval failed' });
 
     await ensureDirs();
     await fs.writeFile(pendingPathFor(paymentId), JSON.stringify({
       playerId, metadata: info.data.metadata, amount: info.data.amount, createdAt: Date.now(),
+      // Recorded now (server-derived, not client-supplied) so /complete
+      // marks the exact week this grant belongs to even in the rare case
+      // the calendar ticks over into a new week between approve and complete.
+      starterWeekIndex,
     }));
     res.json({ ok: true });
   } catch (err) {
@@ -274,7 +339,7 @@ app.post('/api/payments/complete', async (req, res) => {
 
     const grantedState = await withLock(`player:${playerId}`, async () => {
       const state = (await readPlayerState(playerId)) || {};
-      applyGrant(state, pending.metadata);
+      applyGrant(state, pending.metadata, pending.starterWeekIndex);
       await writePlayerState(playerId, state);
       return state;
     });
@@ -287,8 +352,17 @@ app.post('/api/payments/complete', async (req, res) => {
   }
 });
 
-function applyGrant(state, metadata) {
-  if (metadata.kind === 'gems') {
+function applyGrant(state, metadata, starterWeekIndex) {
+  if (metadata.kind === 'starter') {
+    // Belt-and-suspenders re-check at grant time (inside the per-player
+    // lock in /api/payments/complete), in case two payments for the same
+    // account/week both cleared the earlier check in /approve concurrently —
+    // only the first one to actually reach here grants anything.
+    if (!Array.isArray(state.starterOfferClaimedWeeks)) state.starterOfferClaimedWeeks = [];
+    if (state.starterOfferClaimedWeeks.includes(starterWeekIndex)) return;
+    state.gems = (state.gems || 0) + metadata.gems;
+    state.starterOfferClaimedWeeks.push(starterWeekIndex);
+  } else if (metadata.kind === 'gems') {
     state.gems = (state.gems || 0) + metadata.gems;
   } else if (metadata.kind === 'gold') {
     state.gold = (state.gold || 0) + metadata.gold;
