@@ -108,12 +108,17 @@
   }
   .brand{display:flex; align-items:center; gap:8px; flex-shrink:0;}
   .brand .crest{font-size:22px; line-height:1;}
-  .brand-text{display:flex; flex-direction:column; gap:2px; justify-content:center;}
-  .pi-user{font-size:10px; color:var(--text-dim); line-height:1.2;}
+  /* Capped width + hidden overflow so a long username or a stack of badges
+     can never push into (or shrink) the stats icons on the right — the
+     name/badges truncate with an ellipsis instead of expanding the bar. */
+  .brand-text{display:flex; flex-direction:column; gap:2px; justify-content:center; max-width:150px; min-width:0; overflow:hidden;}
+  .pi-user{font-size:10px; color:var(--text-dim); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .pi-user.linked{color:var(--green-bright); font-weight:700;}
   /* Kingdom name sits under the username, leaving room beside the username
      row (and beside this row too) for badges/icons to be added later. */
-  .kingdom-name{font-size:11px; color:var(--text); font-weight:700; line-height:1.2; display:flex; align-items:center; gap:4px;}
+  .kingdom-name{font-size:11px; color:var(--text); font-weight:700; line-height:1.2; display:flex; align-items:center; gap:3px; min-width:0;}
+  .kingdom-name-text{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+  .kingdom-name .name-badge{flex-shrink:0;}
   .stats{
     display:flex; align-items:center; gap:8px;
     overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;
@@ -188,6 +193,10 @@
     display:flex; align-items:center; gap:8px;
     font-size:15px; color:var(--gold-bright); margin:0 0 3px;
   }
+  /* Region name sits under the kingdom name/badges row instead of beside it,
+     so the kingdom-name line stays free for badges/frame icons to sit next
+     to the name without crowding or wrapping. */
+  .region-subline{color:var(--text-dim); font-size:12px; font-weight:600; margin:0 0 3px;}
   .panel-sub{color:var(--text-dim); font-size:12.5px; margin:0 0 12px; line-height:1.5;}
   .stat-row{display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px; border-bottom:1px solid var(--border-soft);}
   .stat-row:last-child{border-bottom:none;}
@@ -550,6 +559,9 @@
   .gift-panel-label{font-size:11.5px; color:var(--text-dim); font-weight:700; min-width:64px;}
   .gift-chip-row{display:flex; flex-wrap:wrap; gap:6px;}
   .gift-message-select{font-size:12px; padding:4px 6px; border-radius:6px; border:1px solid var(--border); background:var(--bg-panel); flex:1; min-width:140px;}
+  .gift-message-custom{font-size:12px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg-panel); color:var(--text); flex:1; min-width:140px; box-sizing:border-box;}
+  .gift-message-custom::placeholder{color:var(--text-dim);}
+  .gift-message-hint{font-size:10px; color:var(--text-dim); margin:2px 0 0; width:100%;}
   .gift-exclusive-chip{border-color:#f472b6 !important; color:#f472b6;}
   .gift-history{
     border:1px solid var(--border); border-radius:10px; padding:10px;
@@ -1367,14 +1379,15 @@ function renderTopbar(){
   }
   // Kingdom name rendered under the username — leaves the row(s) free for
   // equipped badges/frame icons to slot in alongside, without crowding
-  // the username itself.
+  // the username itself. The name text truncates with an ellipsis (see
+  // .kingdom-name-text) while the badge itself never shrinks or gets cut.
   const kingdomLabel = document.getElementById('kingdomNameLabel');
   if(kingdomLabel){
     if(piUser){
-      kingdomLabel.textContent = state.kingdomName;
+      kingdomLabel.innerHTML = `<span class="kingdom-name-text">${escapeHtml(state.kingdomName)}</span>${badgeTag(state.equippedBadge, state.equippedFrame)}`;
       kingdomLabel.style.display = '';
     } else {
-      kingdomLabel.textContent = '';
+      kingdomLabel.innerHTML = '';
       kingdomLabel.style.display = 'none';
     }
   }
@@ -1738,7 +1751,8 @@ function renderCity(){
 
   wrap.innerHTML = `
     <div class="panel">
-      <h2 class="panel-title">🏰 ${escapeHtml(state.kingdomName)}${badgeTag(state.equippedBadge, state.equippedFrame)} <span style="color:var(--text-dim); font-weight:400;">— ${REGIONS.find(r=>r.id===state.currentRegionId).name}</span></h2>
+      <h2 class="panel-title">🏰 ${escapeHtml(state.kingdomName)}${badgeTag(state.equippedBadge, state.equippedFrame)}</h2>
+      <div class="region-subline">${REGIONS.find(r=>r.id===state.currentRegionId).name}</div>
       <p class="panel-sub">Tap an empty plot to build, or an existing one to upgrade. Building materials come from the words you solve.</p>
       <div class="city-grid">${plotsHtml}</div>
       ${state.buildings.some((b,i)=>unlockDayForPlot(i)!==null && state.day<unlockDayForPlot(i)) ? `<p class="panel-sub" style="margin-top:10px; margin-bottom:0;">🔒 Locked plots unlock as your kingdom grows — check back on the day shown.</p>` : ''}
@@ -3428,10 +3442,18 @@ async function renderLeaderboard(){
     renderLeaderboard();
   });
   wrap.querySelectorAll('[data-lbmetric]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{ leaderboardMetric = btn.dataset.lbmetric; renderLeaderboardList(); });
+    btn.addEventListener('click', ()=>{
+      leaderboardMetric = btn.dataset.lbmetric;
+      wrap.querySelectorAll('[data-lbmetric]').forEach(b=>b.classList.toggle('active', b===btn));
+      renderLeaderboardList();
+    });
   });
   wrap.querySelectorAll('[data-lbview]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{ leaderboardView = btn.dataset.lbview; renderLeaderboardList(); });
+    btn.addEventListener('click', ()=>{
+      leaderboardView = btn.dataset.lbview;
+      wrap.querySelectorAll('[data-lbview]').forEach(b=>b.classList.toggle('active', b===btn));
+      renderLeaderboardList();
+    });
   });
   const searchInput = document.getElementById('lbSearchInput');
   searchInput.addEventListener('input', ()=>{
@@ -3485,10 +3507,17 @@ function renderLeaderboardList(){
     pool = players;
   }
   const sorted = [...pool].sort((a,b)=> (b[leaderboardMetric]||0) - (a[leaderboardMetric]||0)).slice(0, isSearching ? 20 : 50);
+  // Global rank (against the full player list, not just the pool) is looked
+  // up from a single pre-sorted pass + Map instead of re-sorting the entire
+  // player list once per rendered row — that re-sort-per-row is what made
+  // typing in the search box (which re-runs this on every keystroke) feel
+  // heavy/laggy.
+  const globalRanked = players.slice().sort((a,b)=> (b[leaderboardMetric]||0) - (a[leaderboardMetric]||0));
+  const rankById = new Map(globalRanked.map((p,i)=>[p.playerId, i]));
   listEl.innerHTML = sorted.map((p)=>{
     const isMe = p.playerId===myId;
     const isFollowed = followedIds.includes(p.playerId);
-    const rankInAll = players.slice().sort((a,b)=> (b[leaderboardMetric]||0) - (a[leaderboardMetric]||0)).findIndex(x=>x.playerId===p.playerId);
+    const rankInAll = rankById.get(p.playerId);
     const name = p.playerId.replace(/^pi_|^guest_/,'') + (p.playerId.startsWith('guest_') ? ' (guest)' : '');
     const badge = badgeTag(isMe ? state.equippedBadge : p.equippedBadge, isMe ? state.equippedFrame : p.equippedFrame);
     const medal = rankInAll===0?'🥇':rankInAll===1?'🥈':rankInAll===2?'🥉':`#${rankInAll+1}`;
@@ -3552,14 +3581,42 @@ function renderLeaderboardList(){
 let giftPanelPlayerId = null; // which leaderboard row currently has its gift panel open
 let giftHistoryOpen = false; // whether the collapsible "Gift History" panel is expanded
 const GIFT_HISTORY_LIMIT = 20; // client-side log only — trimmed to the most recent N so state.giftHistory can't grow unbounded
-// Expanded canned-message set. Still a strict whitelist (no free text — see
-// server.js's GIFTS comment on why: avoids a moderation surface). Must stay
-// byte-for-byte identical to CANNED_GIFT_MESSAGES in server.js, since the
-// server rejects any message not in its own copy of this list.
+// Expanded canned-message set, now paired with an optional free-text field
+// (see giftMessageCustom in renderGiftPanel). Canned messages stay a strict
+// whitelist; custom text instead goes through sanitizeGiftMessage() below
+// and the server's own mirror check — never trusted verbatim in either
+// place. Must stay byte-for-byte identical to CANNED_GIFT_MESSAGES in
+// server.js, since the server also accepts these exact strings unfiltered.
 const CANNED_GIFT_MESSAGES = [
   'Congrats! 🎉', 'Thanks for playing together! 🤝', 'Good luck! 🍀', 'Enjoy! 🎁',
   'Well deserved! 👏', 'You inspire me! ✨', 'Keep it up! 💪', 'From one Pioneer to another 🏰',
 ];
+// Must match GIFT_MESSAGE_MAX_LEN in server.js.
+const GIFT_MESSAGE_MAX_LEN = 60;
+// Blocks a custom gift message that contains a link or HTML-ish markup —
+// mirrors the server's own check (server.js is still the authority; this
+// is just so the player gets instant feedback instead of a round-trip
+// rejection). Returns the trimmed message on success, or null + a toast
+// explaining why on failure. An empty string is valid (means "no message").
+function sanitizeGiftMessage(raw){
+  const msg = (raw||'').trim();
+  if(msg===''){
+    return '';
+  }
+  if(msg.length > GIFT_MESSAGE_MAX_LEN){
+    toast(`Message is too long — max ${GIFT_MESSAGE_MAX_LEN} characters.`);
+    return null;
+  }
+  if(/[<>]/.test(msg)){
+    toast("Message can't contain < or > characters.");
+    return null;
+  }
+  if(/(https?:\/\/|www\.)/i.test(msg) || /\b[a-z0-9-]+\.(com|net|org|io|co|info|biz|xyz|ru|gg|app|dev|me|link|net|tv|shop)\b/i.test(msg)){
+    toast("Message can't contain links.");
+    return null;
+  }
+  return msg;
+}
 // Badge/frame chips offered here are the non-achievement BADGES/BADGE_FRAMES
 // (mirrors GIFTABLE_BADGES / GIFTABLE_FRAMES server-side — Founder Badge and
 // every ACHIEVEMENT_BADGES entry are deliberately absent, so a gift can never
@@ -3587,6 +3644,11 @@ function renderGiftPanel(recipientId){
         <option value="">No message</option>
         ${CANNED_GIFT_MESSAGES.map(m=>`<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
       </select>
+    </div>
+    <div class="gift-panel-row">
+      <span class="gift-panel-label">✏️ Or write</span>
+      <input type="text" id="giftMessageCustom" class="gift-message-custom" maxlength="${GIFT_MESSAGE_MAX_LEN}" placeholder="Your own message (optional)" />
+      <p class="gift-message-hint">No links, no HTML — max ${GIFT_MESSAGE_MAX_LEN} characters. Overrides the dropdown above when filled in.</p>
     </div>
     <div class="gift-panel-row"><span class="gift-panel-label">🪙 Gold</span><div class="gift-chip-row">${goldChips}</div></div>
     <div class="gift-panel-row"><span class="gift-panel-label">🎖️ Badge</span><div class="gift-chip-row">${badgeChips}</div></div>
@@ -3625,7 +3687,17 @@ function renderGiftHistory(){
 async function sendGift(recipientId, kind, itemId, amount){
   if(!API_BASE) return toast('No gift server configured yet.');
   const messageSelect = document.getElementById('giftMessageSelect');
-  const message = messageSelect && messageSelect.value ? messageSelect.value : undefined;
+  const messageCustomEl = document.getElementById('giftMessageCustom');
+  const customRaw = messageCustomEl ? messageCustomEl.value : '';
+  let message;
+  if(customRaw && customRaw.trim()!==''){
+    // Free-text message takes priority over the dropdown when filled in.
+    const cleaned = sanitizeGiftMessage(customRaw);
+    if(cleaned===null) return; // sanitizeGiftMessage already showed the reason via toast
+    message = cleaned || undefined;
+  } else {
+    message = (messageSelect && messageSelect.value) ? messageSelect.value : undefined;
+  }
   try{
     const res = await fetch(`${API_BASE}/gift/send`, {
       method:'POST', headers:{'Content-Type':'application/json'},
