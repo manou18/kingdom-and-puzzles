@@ -166,6 +166,7 @@ app.get('/api/leaderboard', async (req, res) => {
           totalDonated: s.totalDonated || 0,
           streak: s.streak || 0,
           equippedBadge: s.equippedBadge || null, // cosmetic only — safe to expose publicly
+          equippedFrame: s.equippedFrame || null, // cosmetic only — safe to expose publicly
         });
       } catch { /* skip an unreadable/corrupt save rather than failing the whole list */ }
     }
@@ -443,6 +444,130 @@ app.post('/api/market/buy', async (req, res) => {
     res.json({ ok: true, paid: listing.price, sellerReceived: payout });
   } catch (err) {
     console.error('Buy error:', err);
+    res.status(500).json({ error: 'internal error' });
+  }
+});
+
+/* ============================= GIFTS ============================= *
+ * Player-to-player gifting: gold, or a cosmetic badge/frame credited
+ * straight to a chosen recipient. Gold only, never gems — gems trace back
+ * to real Pi money, so letting them move player-to-player would open a
+ * laundering path between two Pi wallets. Achievement badges (see
+ * ACHIEVEMENT_BADGES client-side) and the Founder badge are never in
+ * GIFTABLE_BADGES below, for the same reason they're never purchasable:
+ * owning one must always mean it was actually earned, so there's no
+ * gift-shaped loophole into getting one another way.
+ *
+ * Delivery uses a small mailbox, not a live write into the recipient's
+ * gameplay state: the gift is appended to recipient.pendingGifts, and the
+ * CLIENT applies it (adds the gold/badge, shows a toast, clears the list)
+ * next time that player's app loads — see applyPendingGifts() in index.html.
+ * That keeps this endpoint from needing to know anything about gameplay
+ * beyond "hand them this envelope."
+ * ------------------------------------------------------------------------- */
+const GIFT_DAILY_LIMIT = 5; // max gifts one player can SEND per calendar day (UTC)
+const GIFT_GOLD_MIN = 5;
+const GIFT_GOLD_MAX = 200;
+const CANNED_GIFT_MESSAGES = [
+  'Congrats! 🎉', 'Thanks for playing together! 🤝', 'Good luck! 🍀', 'Enjoy! 🎁',
+];
+
+// Mirrors the gold prices of the subset of client-side BADGES / BADGE_FRAMES
+// that are safe to gift. Keep in sync with index.html if those prices ever
+// change — deliberately duplicated rather than trusting a price the client
+// sends, per this file's security principle at the top.
+const GIFTABLE_BADGES = {
+  moon: 150, star: 90, flame: 120, blossom: 60, falcon: 135, dragon: 240,
+  compass: 105, clover: 75, horseshoe: 75, evileye: 90, rabbitfoot: 105, bookworm: 120,
+};
+const GIFTABLE_FRAMES = { silver: 45, gold: 60, jeweled: 120 };
+
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+
+app.post('/api/gift/send', async (req, res) => {
+  const { senderId, recipientId, kind, itemId, amount, message } = req.body || {};
+  if (!isValidPlayerId(senderId) || !isValidPlayerId(recipientId)) {
+    return res.status(400).json({ error: 'invalid player id' });
+  }
+  if (senderId === recipientId) return res.status(400).json({ error: "you can't gift yourself" });
+  if (!['gold', 'badge', 'frame'].includes(kind)) return res.status(400).json({ error: 'invalid gift kind' });
+  if (message !== undefined && message !== null && !CANNED_GIFT_MESSAGES.includes(message)) {
+    return res.status(400).json({ error: 'invalid message' }); // whitelist only — no free text, to avoid a moderation surface
+  }
+
+  let cost, giftPayload;
+  if (kind === 'gold') {
+    if (!Number.isInteger(amount) || amount < GIFT_GOLD_MIN || amount > GIFT_GOLD_MAX) {
+      return res.status(400).json({ error: 'invalid gold amount' });
+    }
+    cost = amount;
+    giftPayload = { kind: 'gold', amount };
+  } else if (kind === 'badge') {
+    if (!Object.prototype.hasOwnProperty.call(GIFTABLE_BADGES, itemId)) {
+      return res.status(400).json({ error: 'that badge cannot be gifted' });
+    }
+    cost = GIFTABLE_BADGES[itemId];
+    giftPayload = { kind: 'badge', itemId };
+  } else {
+    if (!Object.prototype.hasOwnProperty.call(GIFTABLE_FRAMES, itemId)) {
+      return res.status(400).json({ error: 'that frame cannot be gifted' });
+    }
+    cost = GIFTABLE_FRAMES[itemId];
+    giftPayload = { kind: 'frame', itemId };
+  }
+
+  try {
+    // Recipient must actually exist, and (for badge/frame) not already own
+    // it — both checked here since we already have to read their file for
+    // the existence check, so it costs nothing extra to also save the
+    // sender from spending gold on a gift that would just no-op on arrival.
+    const recipientState = await readPlayerState(recipientId);
+    if (!recipientState) return res.status(404).json({ error: 'recipient not found' });
+    if (kind === 'badge' && (recipientState.ownedBadges || []).includes(itemId)) {
+      return res.status(400).json({ error: 'recipient already owns that badge' });
+    }
+    if (kind === 'frame' && (recipientState.ownedFrames || []).includes(itemId)) {
+      return res.status(400).json({ error: 'recipient already owns that frame' });
+    }
+
+    const result = await withLock(`player:${senderId}`, async () => {
+      const state = await readPlayerState(senderId);
+      if (!state) return { error: 'sender not found' };
+      const today = todayKey();
+      if (state.giftsSentDate !== today) { state.giftsSentDate = today; state.giftsSentCount = 0; }
+      if ((state.giftsSentCount || 0) >= GIFT_DAILY_LIMIT) {
+        return { error: `You can only send ${GIFT_DAILY_LIMIT} gifts per day` };
+      }
+      if ((state.gold || 0) < cost) return { error: 'not enough gold' };
+      state.gold -= cost;
+      state.giftsSentCount = (state.giftsSentCount || 0) + 1;
+      await writePlayerState(senderId, state);
+      return { ok: true };
+    });
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    const gift = {
+      id: `gift_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      fromPlayerId: senderId,
+      message: message || null,
+      sentAt: Date.now(),
+      ...giftPayload,
+    };
+    // Small race window: if the recipient's own client saves its full state
+    // between this write and the recipient next loading it, this gift could
+    // be overwritten before they see it. Acceptable for a cosmetic social
+    // feature — same trade-off already made elsewhere in this file for
+    // simplicity over a real distributed transaction.
+    await withLock(`player:${recipientId}`, async () => {
+      const state = (await readPlayerState(recipientId)) || {};
+      if (!Array.isArray(state.pendingGifts)) state.pendingGifts = [];
+      state.pendingGifts.push(gift);
+      await writePlayerState(recipientId, state);
+    });
+
+    res.json({ ok: true, cost });
+  } catch (err) {
+    console.error('Gift error:', err);
     res.status(500).json({ error: 'internal error' });
   }
 });
