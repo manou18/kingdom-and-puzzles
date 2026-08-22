@@ -3,7 +3,7 @@
  * -------------------------------------------------------------------------
  * Three jobs:
  *   1. Save/load player state           (existing — unchanged behavior)
- *   2. Real Pi payments (gems + patron) — server-authoritative granting
+ *   2. Real Pi payments (gold, gems + patron) — server-authoritative granting
  *   3. Internal gold-only marketplace   — server-authoritative trading
  *
  * Storage is still one JSON file per player under ./data/, plus a couple of
@@ -214,11 +214,20 @@ async function piApi(pathSuffix, options = {}) {
 }
 
 // Only these purchase kinds are ever granted — anything else is rejected.
-// gems: flat currency top-up. patron: extends patronUntil by N days.
+// gems: flat currency top-up. gold: flat gold top-up (a convenience
+// alternative to gems, priced worse per-Pi client-side — see GOLD_PACKS in
+// index.html). patron: extends patronUntil by N days, optionally tagged
+// with tier:'plus' for the pricier Patron+ offer (bigger gem trickle,
+// exclusive badge/frame — see applyGrant below).
 function isGrantableMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') return false;
   if (metadata.kind === 'gems') return Number.isInteger(metadata.gems) && metadata.gems > 0 && metadata.gems <= 100000;
-  if (metadata.kind === 'patron') return Number.isInteger(metadata.days) && metadata.days > 0 && metadata.days <= 366;
+  if (metadata.kind === 'gold') return Number.isInteger(metadata.gold) && metadata.gold > 0 && metadata.gold <= 1000000;
+  if (metadata.kind === 'patron') {
+    if (!Number.isInteger(metadata.days) || metadata.days <= 0 || metadata.days > 366) return false;
+    if (metadata.tier !== undefined && metadata.tier !== 'basic' && metadata.tier !== 'plus') return false;
+    return true;
+  }
   return false;
 }
 
@@ -281,11 +290,24 @@ app.post('/api/payments/complete', async (req, res) => {
 function applyGrant(state, metadata) {
   if (metadata.kind === 'gems') {
     state.gems = (state.gems || 0) + metadata.gems;
+  } else if (metadata.kind === 'gold') {
+    state.gold = (state.gold || 0) + metadata.gold;
   } else if (metadata.kind === 'patron') {
     const now = Date.now();
     const currentUntil = state.patronUntil ? new Date(state.patronUntil).getTime() : 0;
     const base = currentUntil > now ? currentUntil : now; // stacks onto remaining time instead of wasting it
     state.patronUntil = new Date(base + metadata.days * 86400000).toISOString();
+    state.patronTier = metadata.tier === 'plus' ? 'plus' : 'basic'; // which tier's daily trickle applies going forward
+    if (metadata.tier === 'plus') {
+      // Exclusive Patron+ badge/frame — granted once, kept forever, same
+      // "never take away something already bought" rule as every other
+      // cosmetic in this file. Mirrors PATRON_PLUS_BADGE / PATRON_PLUS_FRAME
+      // in index.html.
+      if (!Array.isArray(state.ownedBadges)) state.ownedBadges = [];
+      if (!state.ownedBadges.includes('patron-plus')) state.ownedBadges.push('patron-plus');
+      if (!Array.isArray(state.ownedFrames)) state.ownedFrames = [];
+      if (!state.ownedFrames.includes('patron-plus-frame')) state.ownedFrames.push('patron-plus-frame');
+    }
   }
 }
 
@@ -458,6 +480,12 @@ app.post('/api/market/buy', async (req, res) => {
  * owning one must always mean it was actually earned, so there's no
  * gift-shaped loophole into getting one another way.
  *
+ * GIFTABLE_BADGES / GIFTABLE_FRAMES also include a couple of gift-exclusive
+ * items (currently 'friendship' and 'ribbon') that never appear in the
+ * normal purchasable BADGES/BADGE_FRAMES catalog client-side at all — for
+ * those, gifting is the ONLY way to obtain them. Same ownership/duplicate
+ * checks below apply either way.
+ *
  * Delivery uses a small mailbox, not a live write into the recipient's
  * gameplay state: the gift is appended to recipient.pendingGifts, and the
  * CLIENT applies it (adds the gold/badge, shows a toast, clears the list)
@@ -468,8 +496,12 @@ app.post('/api/market/buy', async (req, res) => {
 const GIFT_DAILY_LIMIT = 5; // max gifts one player can SEND per calendar day (UTC)
 const GIFT_GOLD_MIN = 5;
 const GIFT_GOLD_MAX = 200;
+// Must stay byte-for-byte identical to CANNED_GIFT_MESSAGES in index.html —
+// this is the server's own copy of the whitelist, since we never trust a
+// message the client sends beyond "is it one of these exact strings".
 const CANNED_GIFT_MESSAGES = [
   'Congrats! 🎉', 'Thanks for playing together! 🤝', 'Good luck! 🍀', 'Enjoy! 🎁',
+  'Well deserved! 👏', 'You inspire me! ✨', 'Keep it up! 💪', 'From one Pioneer to another 🏰',
 ];
 
 // Mirrors the gold prices of the subset of client-side BADGES / BADGE_FRAMES
@@ -479,8 +511,17 @@ const CANNED_GIFT_MESSAGES = [
 const GIFTABLE_BADGES = {
   moon: 150, star: 90, flame: 120, blossom: 60, falcon: 135, dragon: 240,
   compass: 105, clover: 75, horseshoe: 75, evileye: 90, rabbitfoot: 105, bookworm: 120,
+  // Gift-exclusive — mirrors GIFT_EXCLUSIVE_BADGES in index.html. Not present
+  // in any purchasable client-side list, so the ONLY path to owning one is
+  // through this endpoint. Same "recipient can't already own it" check below
+  // applies, so it can't be re-gifted to someone who already has it.
+  friendship: 100,
 };
-const GIFTABLE_FRAMES = { silver: 45, gold: 60, jeweled: 120 };
+const GIFTABLE_FRAMES = {
+  silver: 45, gold: 60, jeweled: 120,
+  // Gift-exclusive — mirrors GIFT_EXCLUSIVE_FRAMES in index.html.
+  ribbon: 90,
+};
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
