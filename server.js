@@ -497,12 +497,30 @@ const GIFT_DAILY_LIMIT = 5; // max gifts one player can SEND per calendar day (U
 const GIFT_GOLD_MIN = 5;
 const GIFT_GOLD_MAX = 200;
 // Must stay byte-for-byte identical to CANNED_GIFT_MESSAGES in index.html —
-// this is the server's own copy of the whitelist, since we never trust a
-// message the client sends beyond "is it one of these exact strings".
+// the server's own copy, always accepted verbatim and unfiltered.
 const CANNED_GIFT_MESSAGES = [
   'Congrats! 🎉', 'Thanks for playing together! 🤝', 'Good luck! 🍀', 'Enjoy! 🎁',
   'Well deserved! 👏', 'You inspire me! ✨', 'Keep it up! 💪', 'From one Pioneer to another 🏰',
 ];
+// Must match GIFT_MESSAGE_MAX_LEN in index.html.
+const GIFT_MESSAGE_MAX_LEN = 60;
+const GIFT_MESSAGE_URL_RE = /(https?:\/\/|www\.)/i;
+const GIFT_MESSAGE_DOMAIN_RE = /\b[a-z0-9-]+\.(com|net|org|io|co|info|biz|xyz|ru|gg|app|dev|me|link|tv|shop)\b/i;
+// Free-text gift messages are now allowed alongside the canned whitelist,
+// but never trusted as-is: length-capped, and rejected outright if it
+// contains any HTML-tag-shaped angle brackets or anything link-shaped
+// (scheme, www., or a bare domain). This is the server's own check — the
+// client's sanitizeGiftMessage() is only there for instant feedback, this
+// one is the actual authority since we never trust what the client sends.
+function isValidGiftMessage(message) {
+  if (message === undefined || message === null || message === '') return true;
+  if (typeof message !== 'string') return false;
+  if (CANNED_GIFT_MESSAGES.includes(message)) return true;
+  if (message.length > GIFT_MESSAGE_MAX_LEN) return false;
+  if (/[<>]/.test(message)) return false;
+  if (GIFT_MESSAGE_URL_RE.test(message) || GIFT_MESSAGE_DOMAIN_RE.test(message)) return false;
+  return true;
+}
 
 // Mirrors the gold prices of the subset of client-side BADGES / BADGE_FRAMES
 // that are safe to gift. Keep in sync with index.html if those prices ever
@@ -532,8 +550,8 @@ app.post('/api/gift/send', async (req, res) => {
   }
   if (senderId === recipientId) return res.status(400).json({ error: "you can't gift yourself" });
   if (!['gold', 'badge', 'frame'].includes(kind)) return res.status(400).json({ error: 'invalid gift kind' });
-  if (message !== undefined && message !== null && !CANNED_GIFT_MESSAGES.includes(message)) {
-    return res.status(400).json({ error: 'invalid message' }); // whitelist only — no free text, to avoid a moderation surface
+  if (message !== undefined && message !== null && !isValidGiftMessage(message)) {
+    return res.status(400).json({ error: 'invalid message' }); // too long, or link/HTML-shaped content
   }
 
   let cost, giftPayload;
