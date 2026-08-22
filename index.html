@@ -391,8 +391,22 @@
   .tile:active{transform:translateY(2px); border-bottom-width:1px;}
   .tile.used{visibility:hidden;}
 
-  .puzzle-actions{display:flex; gap:8px; margin-top:14px; justify-content:center;}
-  .puzzle-actions .btn{font-size:12.5px; padding:9px 12px;}
+  .puzzle-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; justify-content:center;}
+  .puzzle-actions .btn{font-size:12.5px; padding:9px 12px; white-space:nowrap; flex-shrink:0; position:relative; overflow:visible;}
+  .btn-count{
+    position:absolute; top:-7px; right:-7px;
+    min-width:18px; height:18px; padding:0 4px; box-sizing:border-box;
+    border-radius:999px;
+    background:linear-gradient(180deg, var(--gold-bright), var(--gold));
+    border:1.5px solid var(--bg-panel);
+    color:var(--ink);
+    font-family:'Cinzel', serif; font-weight:800; font-size:10.5px;
+    font-variant-numeric:tabular-nums;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 1px 3px rgba(0,0,0,.4);
+    pointer-events:none;
+  }
+  .btn-count.zero{background:linear-gradient(180deg, var(--bg-panel-3), var(--bg-panel-2)); color:var(--text-dim); border-color:var(--border);}
   .puzzle-progress{font-size:11px; color:var(--text-dim); text-align:center; margin-top:10px;}
 
   /* ---------- Tribe ---------- */
@@ -471,6 +485,7 @@
   .market-tab{
     flex:1; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--text-dim);
     border-radius:9px; padding:7px; font-size:11.5px; font-weight:700; cursor:pointer;
+    position:relative; overflow:visible;
   }
   .market-tab.active{border-color:var(--gold-bright); color:var(--gold-bright); background:#f0c87826;}
   .market-grid{display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;}
@@ -2194,8 +2209,8 @@ function renderPuzzlePlay(){
       `<button class="tile ${t.used?'used':''}" data-tile="${t.id}">${t.letter}</button>`
     ).join('')}</div>
     <div class="puzzle-actions">
-      <button class="btn ghost" id="hintBtn">💡 Hint (${state.hints})</button>
-      <button class="btn ghost" id="axeBtn">🪓 Golden Axe (${state.axes})</button>
+      <button class="btn ghost" id="hintBtn">💡 Hint<span class="btn-count${state.hints<=0?' zero':''}">${state.hints}</span></button>
+      <button class="btn ghost" id="axeBtn">🪓 Golden Axe<span class="btn-count${state.axes<=0?' zero':''}">${state.axes}</span></button>
       <button class="btn ghost" id="shuffleBtn">🔀 Shuffle</button>
       ${anyDecoysLeft ? `<button class="btn ghost" id="decoyEraserBtn">🧹 Clear Decoys</button>` : ''}
       <button class="btn ghost" id="pleaBtn" ${pleaAvailable?'':'disabled'}>${pleaLabel}</button>
@@ -3082,7 +3097,7 @@ function renderShop(){
       <p class="panel-sub">Trade owned skins with other players for gold only — never for gems or Pi. A 10% fee applies when a listing sells.</p>
       <div class="market-tabs">
         <button class="market-tab active" data-markettab="browse">Browse</button>
-        <button class="market-tab" data-markettab="mine">My Listings <span id="mineCount"></span></button>
+        <button class="market-tab" data-markettab="mine">My Listings<span id="mineCount" class="btn-count" style="display:none;"></span></button>
       </div>
       <div id="marketListArea" class="market-grid"><p class="panel-sub">Loading listings…</p></div>
       <div id="marketMineArea" class="market-grid" style="display:none;"></div>
@@ -3294,7 +3309,7 @@ async function renderLeaderboard(){
   const followedCount = (state.followedPlayerIds||[]).length;
   const viewTabsHtml = `
     <button class="market-tab ${leaderboardView==='all'?'active':''}" data-lbview="all">🌍 All</button>
-    <button class="market-tab ${leaderboardView==='following'?'active':''}" data-lbview="following">⭐ Following (${followedCount})</button>
+    <button class="market-tab ${leaderboardView==='following'?'active':''}" data-lbview="following">⭐ Following<span class="btn-count${followedCount<=0?' zero':''}">${followedCount}</span></button>
   `;
 
   wrap.innerHTML = `
@@ -3634,7 +3649,10 @@ async function renderMarketplacePanel(){
   const others = listings.filter(l=>l.sellerId!==myId).sort((a,b)=>a.price-b.price);
   const mine = listings.filter(l=>l.sellerId===myId);
   const mineCountEl = document.getElementById('mineCount');
-  if(mineCountEl) mineCountEl.textContent = mine.length ? `(${mine.length})` : '';
+  if(mineCountEl){
+    if(mine.length){ mineCountEl.textContent = mine.length; mineCountEl.style.display = 'flex'; }
+    else { mineCountEl.textContent = ''; mineCountEl.style.display = 'none'; }
+  }
 
   function marketCard(l, isMine){
     const def = BUILDING_TYPES[l.buildingKey];
