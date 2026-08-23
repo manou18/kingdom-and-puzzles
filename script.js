@@ -1902,7 +1902,7 @@ function renderTribe(){
       <h2 class="panel-title"><span style="display:inline-flex; vertical-align:-3px; width:18px; height:18px; margin-inline-end:4px;">${TRIBE_ICON_SVG}</span>Tribe Members</h2>
       <p class="panel-sub">Each member specializes in one kind of word. Fulfill their daily request for bonus gold and trust — trust unlocks their story over time.</p>
     </div>
-    ${cards}
+    <div class="tribe-grid">${cards}</div>
   `;
   wrap.querySelectorAll('[data-reserve]').forEach(btn=>{
     btn.addEventListener('click', ()=>{

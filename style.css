@@ -664,3 +664,115 @@
     padding:2px 7px; border-radius:8px;
   }
   .empty-hint{font-size:12px; color:var(--text-dim); text-align:center; padding:20px 10px;}
+
+/* =====================================================================
+   RESPONSIVE LAYOUT — tablets, notebooks, desktops, Android TV
+   =====================================================================
+   Everything above this section was written mobile-first (100% width,
+   fixed top/bottom bars spanning the viewport). Rather than rewrite that,
+   this section layers breakpoints on top: it centers the same content in
+   a capped-width column on wider screens (so it doesn't stretch edge-to-
+   edge on a tablet/notebook/desktop/TV), opens up grids that were fixed
+   at mobile column-counts, switches the bottom-sheet modal to a centered
+   dialog once there's room, and adds keyboard/D-pad focus styling for
+   non-touch input (desktop keyboard nav, Android TV remotes). */
+
+/* ---------- Tribe cards: same markup, becomes a grid at wider widths ---------- */
+.tribe-grid{ display:block; }
+
+/* ---------- Focus visibility for keyboard & TV remote (D-pad) nav ----------
+   Touch/mouse users never trigger :focus-visible, so this is invisible
+   during normal phone/tablet use and only appears for keyboard Tab/Enter
+   or a TV remote's directional pad — exactly where it's needed. */
+button:focus-visible,
+[tabindex]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible{
+  outline:3px solid var(--gold-bright);
+  outline-offset:2px;
+  border-radius:8px;
+}
+.plot:focus-visible{ outline-offset:-3px; }
+.tabnav button:focus-visible{ outline-offset:-4px; }
+
+/* ---------- Hover affordance for mouse/trackpad devices only ----------
+   Gated on (hover:hover) + (pointer:fine) so touchscreens (phones,
+   tablets, and touch-enabled notebooks) never get a "sticky hover" state
+   — only real mice/trackpads do. */
+@media (hover:hover) and (pointer:fine){
+  .btn:not(:disabled):hover{ filter:brightness(1.08); }
+  .plot:not(.locked):hover{ filter:brightness(1.1); }
+  .tabnav button:not(.active):hover{ color:var(--text); background:var(--bg-panel-3); }
+  .region-tab:not(.active):not(:disabled):hover{ border-color:var(--gold-bright); color:var(--text); }
+}
+
+/* ---------- Tablets (portrait tablets, small notebooks): ≥600px ---------- */
+@media (min-width:600px){
+  .topbar, .tabnav, .app{
+    max-width:640px; margin-left:auto; margin-right:auto;
+  }
+  .city-grid{ grid-template-columns:repeat(5, 1fr); }
+  .market-grid{ grid-template-columns:repeat(4, 1fr); }
+  /* Bottom-sheet modal starts to feel out of place once the screen isn't
+     phone-shaped — switch to a centered dialog like .center-modal already
+     uses for confirm dialogs. */
+  .overlay{ align-items:center; padding:20px; }
+  .overlay .modal{ border-radius:18px; max-width:440px; margin:0 auto; max-height:80vh; }
+  .modal-handle{ display:none; }
+}
+
+/* ---------- Notebooks / laptop & desktop monitors: ≥900px ---------- */
+@media (min-width:900px){
+  .topbar, .tabnav, .app{ max-width:820px; }
+  .city-grid{ grid-template-columns:repeat(6, 1fr); }
+  .market-grid{ grid-template-columns:repeat(4, 1fr); }
+  .shop-grid{ display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; align-items:start; }
+  .tribe-grid{
+    display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; align-items:start;
+  }
+  .tribe-grid .tribe-card{ margin-bottom:0; }
+  .memorial-grid{ justify-content:flex-start; }
+  .overlay .modal{ max-width:480px; }
+  /* The bottom tab bar reads oddly this wide on a screen you're not
+     holding — narrow its own row so the buttons don't stretch thin. */
+  .tabnav{ max-width:620px; margin:0 auto; }
+}
+
+/* ---------- Large desktop monitors: ≥1280px ---------- */
+@media (min-width:1280px){
+  .topbar, .tabnav, .app{ max-width:1000px; }
+  .city-grid{ grid-template-columns:repeat(8, 1fr); }
+  .market-grid{ grid-template-columns:repeat(5, 1fr); }
+  /* Give the whole app a subtle frame so it doesn't feel like a phone
+     screen stretched across a monitor. */
+  .app{
+    background:rgba(35,42,82,.25);
+    border-left:1px solid var(--border-soft);
+    border-right:1px solid var(--border-soft);
+    padding-left:28px; padding-right:28px;
+  }
+}
+
+/* ---------- Very large screens / 10-foot displays (Android TV, big monitors): ≥1600px ----------
+   TVs are viewed from further away than a monitor, so this bumps the base
+   type scale up rather than just widening the column further — content
+   stays legible at viewing distance instead of just getting a wider gutter. */
+@media (min-width:1600px){
+  html{ font-size:19px; }
+  .topbar, .tabnav, .app{ max-width:1180px; }
+  .city-grid{ grid-template-columns:repeat(8, 1fr); gap:16px; }
+  .tabnav button{ font-size:12px; }
+}
+
+/* ---------- Short / landscape phones and small tablets in landscape ----------
+   The fixed top+bottom bars eat a much bigger share of a short viewport
+   in landscape — trim their padding so more of the puzzle/city content
+   stays visible above the fold without scrolling. */
+@media (max-height:480px) and (orientation:landscape){
+  .topbar{ padding:6px 14px; }
+  .tabnav{ padding:4px 8px; }
+  .tabnav button{ padding:5px 2px 4px; }
+  .landing-top{ padding-top:4vh; }
+  .landing-crest{ font-size:56px; }
+}
