@@ -4096,11 +4096,11 @@ function synthNoise(ctx, {duration=.15, gain=.16, filterFreq=1000, filterType='b
 const DEFAULT_SOUND_PACK = {
   id:'default', name:'Default Sounds', free:true, desc:'Simple built-in tones — free, on from the start.',
   play(ctx, ev){
-    if(ev==='tap') synthTone(ctx,{freq:700, type:'sine', duration:.05, gain:.12});
-    else if(ev==='wrong') synthTone(ctx,{freq:220, type:'triangle', duration:.15, gain:.15});
-    else if(ev==='solve'){ synthTone(ctx,{freq:523, type:'sine', duration:.16, gain:.16}); synthTone(ctx,{freq:784, type:'sine', duration:.18, gain:.12, delay:.06}); }
-    else if(ev==='complete') [523,659,784,1047].forEach((f,i)=>synthTone(ctx,{freq:f, type:'sine', duration:.22, gain:.15, delay:i*.08}));
-    else if(ev==='chest'){ synthTone(ctx,{freq:392, type:'triangle', duration:.2, gain:.16}); synthTone(ctx,{freq:523, type:'triangle', duration:.22, gain:.14, delay:.06}); }
+    if(ev==='tap') synthTone(ctx,{freq:700, type:'sine', duration:.05, gain:.22});
+    else if(ev==='wrong') synthTone(ctx,{freq:220, type:'triangle', duration:.15, gain:.24});
+    else if(ev==='solve'){ synthTone(ctx,{freq:523, type:'sine', duration:.16, gain:.26}); synthTone(ctx,{freq:784, type:'sine', duration:.18, gain:.2, delay:.06}); }
+    else if(ev==='complete') [523,659,784,1047].forEach((f,i)=>synthTone(ctx,{freq:f, type:'sine', duration:.22, gain:.24, delay:i*.08}));
+    else if(ev==='chest'){ synthTone(ctx,{freq:392, type:'triangle', duration:.2, gain:.26}); synthTone(ctx,{freq:523, type:'triangle', duration:.22, gain:.22, delay:.06}); }
   }
 };
 const SOUND_PACKS = [
