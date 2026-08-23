@@ -520,7 +520,7 @@ function freshState(){
     ownedAuras:[], // ids of purchased building auras — see BUILDING_AURAS
     equippedAura:null, // active aura id, or null; applies to every occupied plot at once
     ownedSoundPacks:[], // ids of purchased sound packs — see SOUND_PACKS
-    equippedSoundPack:null, // active pack id, or null (silent); see playSound()
+    equippedSoundPack:'default', // active pack id, or null (explicit silence — a deliberate opt-out, never the default); see playSound(). 'default' is DEFAULT_SOUND_PACK, free and always owned, so the app has sound from the very first launch.
     soundMuted:false, // temporary mute — doesn't affect which pack is equipped
     // In-game follow list: Pi's auth scopes only ever return this player's
     // own identity (username/uid), never their Pi friends or followers, so
@@ -2265,7 +2265,16 @@ function renderShop(){
 
   const ownedSounds = state.ownedSoundPacks || [];
   const soundNoneEquipped = !state.equippedSoundPack;
+  const defaultEquipped = state.equippedSoundPack === 'default';
   const soundRows = `<div class="shop-item">
+      <button class="btn ghost small" data-previewsound="default" title="Preview" style="min-width:34px;">▶</button>
+      <div class="shop-info">
+        <div class="shop-name">${DEFAULT_SOUND_PACK.name} <span class="owned-tag">Free</span></div>
+        <div class="shop-desc">${DEFAULT_SOUND_PACK.desc}</div>
+      </div>
+      <button class="btn shop-buy ${defaultEquipped?'primary':''}" data-equipsound="default">${defaultEquipped?'Equipped ✓':'Equip'}</button>
+    </div>
+    <div class="shop-item">
       <div class="shop-icon">🚫</div>
       <div class="shop-info">
         <div class="shop-name">None</div>
@@ -4078,6 +4087,22 @@ function synthNoise(ctx, {duration=.15, gain=.16, filterFreq=1000, filterType='b
   src.connect(f).connect(g).connect(ctx.destination);
   src.start(t0);
 }
+// DEFAULT_SOUND_PACK: free, always-owned, and equipped from the very first
+// launch — the app should never be silent out of the box. The four packs
+// below in SOUND_PACKS remain paid cosmetic alternatives; this one is the
+// baseline everyone gets automatically. Kept separate from SOUND_PACKS so
+// it can never accidentally be sold/priced, and so the shop can render it
+// distinctly (no buy buttons, ever).
+const DEFAULT_SOUND_PACK = {
+  id:'default', name:'Default Sounds', free:true, desc:'Simple built-in tones — free, on from the start.',
+  play(ctx, ev){
+    if(ev==='tap') synthTone(ctx,{freq:700, type:'sine', duration:.05, gain:.12});
+    else if(ev==='wrong') synthTone(ctx,{freq:220, type:'triangle', duration:.15, gain:.15});
+    else if(ev==='solve'){ synthTone(ctx,{freq:523, type:'sine', duration:.16, gain:.16}); synthTone(ctx,{freq:784, type:'sine', duration:.18, gain:.12, delay:.06}); }
+    else if(ev==='complete') [523,659,784,1047].forEach((f,i)=>synthTone(ctx,{freq:f, type:'sine', duration:.22, gain:.15, delay:i*.08}));
+    else if(ev==='chest'){ synthTone(ctx,{freq:392, type:'triangle', duration:.2, gain:.16}); synthTone(ctx,{freq:523, type:'triangle', duration:.22, gain:.14, delay:.06}); }
+  }
+};
 const SOUND_PACKS = [
   { id:'classic', name:'Classic Sounds', gemPrice:30, goldPrice:90, desc:'Warm, woody tones.',
     play(ctx, ev){
@@ -4116,7 +4141,10 @@ const SOUND_PACKS = [
     }
   },
 ];
-function findSoundPack(id){ return SOUND_PACKS.find(p=>p.id===id) || null; }
+function findSoundPack(id){
+  if(id==='default') return DEFAULT_SOUND_PACK;
+  return SOUND_PACKS.find(p=>p.id===id) || null;
+}
 function buySoundPack(id, currency){
   const p = SOUND_PACKS.find(x=>x.id===id);
   if(!p) return;
@@ -4138,7 +4166,7 @@ function buySoundPack(id, currency){
 }
 function equipSoundPack(id){
   state.ownedSoundPacks = state.ownedSoundPacks || [];
-  const owned = id==='none' || state.ownedSoundPacks.includes(id);
+  const owned = id==='none' || id==='default' || state.ownedSoundPacks.includes(id);
   if(!owned) return;
   state.equippedSoundPack = (id==='none') ? null : ((state.equippedSoundPack===id) ? null : id);
   renderAll();
