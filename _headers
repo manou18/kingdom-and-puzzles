@@ -1,0 +1,45 @@
+# Security headers, applied to every response.
+#
+# IMPORTANT: this app is meant to run *inside* the Pi Browser, which loads
+# Pi ecosystem apps inside its own webview/frame container. X-Frame-Options: DENY
+# and frame-ancestors 'none' would block that framing outright — the browser
+# would refuse to render the page at all before any of script.js (including
+# Pi.init/authenticate) ever runs. That's a header problem, not an auth
+# problem, so neither is set here.
+#
+# NOTE: There is intentionally NO Content-Security-Policy header here, for
+# the same reason documented in the chesspi-board reference app: Pi's real
+# auth flow talks to domains beyond *.minepi.com (e.g. under pinet.com),
+# and CSP blocks those silently — no readable error, just a failed
+# Pi.authenticate()/Pi.createPayment() call. If a CSP is added later, watch
+# the browser console for violation lines during those calls and allowlist
+# exactly what shows up there before assuming it's safe.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# robots.txt changes rarely — a day-long cache cuts repeat crawler fetches
+# while still letting an edit reach crawlers same-day.
+/robots.txt
+  Cache-Control: public, max-age=86400
+
+# script.js / style.css have fixed filenames (no content-hash build step in
+# this app), so they can't be cached long-term the way chesspi-board's
+# hashed /assets/* can — a stale long-cached copy would keep serving old
+# game logic after a deploy. A short cache with forced revalidation lets
+# repeat visits skip a full re-download most of the time via a cheap 304,
+# while still picking up an edit on the next real change.
+/script.js
+  Cache-Control: public, max-age=300, must-revalidate
+/style.css
+  Cache-Control: public, max-age=300, must-revalidate
+
+# index.html is what tells a returning visitor which script.js/style.css to
+# fetch — it must stay effectively uncached so a new deploy is picked up
+# right away.
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+/
+  Cache-Control: public, max-age=0, must-revalidate
