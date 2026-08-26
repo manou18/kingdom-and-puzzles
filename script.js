@@ -414,7 +414,9 @@ const BUILDING_TYPES = {
 // holding hands" emoji, which didn't read as tribal). Simple silhouette:
 // feather + head + poncho-shaped body, monochrome via currentColor so it
 // follows the tab's active/inactive text color automatically.
-const TRIBE_ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M11.3 2.4c.3-.5 1.1-.5 1.4 0l1.1 2-1.8-.4-1.8.4 1.1-2z"/><circle cx="12" cy="8.3" r="2.8"/><path d="M12 11.6c-3.4 0-6.2 2.6-6.6 6l-.3 2.9c-.1.6.4 1.1 1 1.1h11.8c.6 0 1.1-.5 1-1.1l-.3-2.9c-.4-3.4-3.2-6-6.6-6z"/></svg>`;
+// A group-of-people glyph (not a single villager) so the icon actually reads
+// as "Tribe" — your community of neighbors — rather than one person.
+const TRIBE_ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="16" cy="8.2" r="2.1"/><path d="M8.5 12.3c-2.9 0-6 1.4-6 4v2.4c0 .6.5 1.1 1.1 1.1h9.8c.6 0 1.1-.5 1.1-1.1V16.3c0-2.6-3.1-4-6-4z"/><path d="M16.6 11.8c-.6 0-1.2.05-1.85.16 1.15.85 1.95 2 1.95 3.54v2.3c0 .35-.07.68-.2.98H21.4c.6 0 1.1-.5 1.1-1.1v-1.9c0-2.4-2.9-3.98-5.9-3.98z"/></svg>`;
 
 const TRIBE_DATA = [
   { id:"blacksmith", name:"Brenna Ironhand", role:"Blacksmith", category:"metals", icon:"🔨",
@@ -3142,38 +3144,51 @@ function renderAbout(){
     `<button class="market-tab ${t.key===aboutSubTab?'active':''}" data-aboutsub="${t.key}">${t.label}</button>`
   ).join('');
 
-  const legalDisclaimer = `<div class="fair-note">⚠️ Placeholder draft — not legal advice, and not ready to publish as-is. Have a lawyer review and adapt this before launch, especially given real Pi payments and player-to-player trading happen in this app.</div>`;
 
   const content = {
     privacy: `
-      ${legalDisclaimer}
-      <h3>Privacy Policy (draft)</h3>
-      <p class="panel-sub">Last updated: [date]</p>
-      <p class="panel-sub"><strong>What we collect:</strong> your Pi username (if you sign in via the Pi Browser) or an anonymous guest ID, your in-game progress (gold, gems, buildings, streak, etc.), and payment records for any Pi transactions you make.</p>
-      <p class="panel-sub"><strong>What we don't collect:</strong> we don't access your Pi wallet balance or private keys — payments go through Pi Network's own systems.</p>
-      <p class="panel-sub"><strong>How it's stored:</strong> on our server, tied to your player ID, for as long as you keep playing. [Describe your actual retention/deletion policy here.]</p>
-      <p class="panel-sub"><strong>Sharing:</strong> your username and public stats (gold, dynasties founded, etc.) are visible to other players in Rankings and the Player Market. [Confirm this matches what you actually want to expose.]</p>
-      <p class="panel-sub"><strong>Your rights:</strong> [add how a player can request their data or ask for deletion — required in many jurisdictions, e.g. GDPR if you have EU/UK players.]</p>
-      <p class="panel-sub"><strong>Contact:</strong> [your support email or contact method].</p>
+      <h3>Privacy Policy</h3>
+      <p class="panel-sub">Last updated: August 26, 2026</p>
+      <p class="panel-sub"><strong>Who we are:</strong> Kingdoms &amp; Words is developed and operated by the Kingdoms &amp; Words team ("we", "us"). This policy explains what information we collect when you play and why.</p>
+      <p class="panel-sub"><strong>What we collect:</strong></p>
+      <p class="panel-sub">• Your Pi username, if you sign in through the Pi Browser — or an anonymous guest ID if you play as a guest.</p>
+      <p class="panel-sub">• Your in-game progress: gold, gems, buildings, streaks, collections, cosmetics you own, and your Tribe relationships.</p>
+      <p class="panel-sub">• Records of any Pi payments you make in the app (gem packs, gold packs, the Patron pass, cosmetics), so we can grant what you paid for and handle support requests.</p>
+      <p class="panel-sub">• Player Market and gifting activity — listings, trades, and gifts you send or receive — so the marketplace and gift history can work.</p>
+      <p class="panel-sub">• Basic technical data (like error logs) if something in the app crashes, so we can fix bugs.</p>
+      <p class="panel-sub"><strong>What we don't collect:</strong> we never see your Pi wallet balance, seed phrase, or private keys. All Pi payments are processed by Pi Network's own systems — we only receive confirmation that a payment happened.</p>
+      <p class="panel-sub"><strong>How it's stored:</strong> your data is stored on our servers, linked to your player ID, for as long as your account stays active. If you stop playing, we keep it for a reasonable period in case you come back, and may delete inactive accounts after an extended period of inactivity.</p>
+      <p class="panel-sub"><strong>Sharing:</strong> your username and public stats (gold total, dynasties founded, badges, frames) are visible to other players in the Leaderboard and Player Market, since that's how those features work. We don't sell your data to advertisers or other third parties.</p>
+      <p class="panel-sub"><strong>Your rights:</strong> you can ask us to tell you what data we hold about your account, correct it, or delete your account and its data. Depending on where you live, local law (for example GDPR in the EU/UK) may give you additional rights — contact us and we'll do our best to help.</p>
+      <p class="panel-sub"><strong>Children:</strong> Kingdoms &amp; Words is not directed at children under 13, and we don't knowingly collect data from them.</p>
+      <p class="panel-sub"><strong>Changes:</strong> if we make meaningful changes to this policy, we'll update the "Last updated" date above.</p>
+      <p class="panel-sub"><strong>Contact:</strong> codenomad213@gmail.com</p>
     `,
     terms: `
-      ${legalDisclaimer}
-      <h3>Terms of Use (draft)</h3>
-      <p class="panel-sub">Last updated: [date]</p>
-      <p class="panel-sub"><strong>The basics:</strong> Kingdoms &amp; Words is a word-puzzle kingdom-builder. Gold and gems are virtual items with no real-world cash value and cannot be exchanged back for Pi or any other currency.</p>
-      <p class="panel-sub"><strong>Purchases:</strong> Gem packs and the Patron pass are paid for with real Pi through Pi Network's payment system. [State your refund policy — this matters a lot for real-money purchases.]</p>
-      <p class="panel-sub"><strong>Player Market:</strong> trades between players are for in-game gold only, facilitated by us for a commission. [Clarify what happens in disputes, and that listings/trades are final once completed.]</p>
-      <p class="panel-sub"><strong>Fair play:</strong> [state your policy on cheating, exploiting bugs, multiple accounts, etc.]</p>
-      <p class="panel-sub"><strong>Account &amp; termination:</strong> [under what conditions you can suspend or terminate an account.]</p>
-      <p class="panel-sub"><strong>Liability:</strong> [standard limitation-of-liability language — get this from a lawyer, don't improvise it.]</p>
+      <h3>Terms of Use</h3>
+      <p class="panel-sub">Last updated: August 26, 2026</p>
+      <p class="panel-sub">By playing Kingdoms &amp; Words, you agree to these terms. If you don't agree, please don't use the app.</p>
+      <p class="panel-sub"><strong>The basics:</strong> Kingdoms &amp; Words is a word-puzzle kingdom-builder. Gold and gems are virtual items that only exist inside the game. They have no real-world cash value, can't be redeemed for Pi or any other currency, and can't be transferred outside the app except through the in-app Player Market and Gifting features.</p>
+      <p class="panel-sub"><strong>Purchases:</strong> Gem packs, gold packs, the Patron pass, and cosmetics are paid for with real Pi through Pi Network's payment system. All sales are generally final once the item or currency has been delivered to your account, since digital goods are granted immediately. If a payment goes through but you never receive the item due to a technical error on our end, contact support and we'll fix it or refund the Pi.</p>
+      <p class="panel-sub"><strong>Player Market:</strong> trades between players exchange in-game gold and cosmetics only — never real Pi. We facilitate trades and may charge a small commission on completed sales. Once a trade completes, it's final; we don't reverse completed trades except in cases of proven fraud or a technical error.</p>
+      <p class="panel-sub"><strong>Fair play:</strong> cheating, exploiting bugs to gain an unfair advantage, using bots or automation, or running multiple accounts to manipulate the Leaderboard or Player Market is not allowed. We may reverse the affected progress or suspend accounts that do this.</p>
+      <p class="panel-sub"><strong>Account &amp; termination:</strong> we may suspend or terminate an account that violates these terms, engages in fraud, or abuses other players. You can stop playing and ask us to delete your account at any time.</p>
+      <p class="panel-sub"><strong>Availability:</strong> we try to keep Kingdoms &amp; Words running smoothly, but we don't guarantee the app will always be available, error-free, or that your progress can never be lost — we recommend keeping your Pi sign-in connected so your save is backed up on our servers.</p>
+      <p class="panel-sub"><strong>Liability:</strong> to the extent allowed by law, we provide Kingdoms &amp; Words "as is" and aren't liable for indirect losses arising from your use of the app, beyond the amount you've spent in it.</p>
+      <p class="panel-sub"><strong>Changes:</strong> we may update these terms as the game evolves; continuing to play after an update means you accept the revised terms.</p>
+      <p class="panel-sub"><strong>Contact:</strong> codenomad213@gmail.com</p>
     `,
     help: `
       <h3>Help &amp; FAQ</h3>
-      <p class="panel-sub"><strong>How do I earn gold?</strong> Solve word puzzles in the Words tab, collect daily building income, and fulfill Tribe requests.</p>
-      <p class="panel-sub"><strong>What are gems for?</strong> Gems are bought with real Pi and spend on cosmetics and convenience items — never on skipping a puzzle or buying a building outright.</p>
-      <p class="panel-sub"><strong>I lost my progress — can I get it back?</strong> Your kingdom is saved automatically. If you signed in with Pi, reopening the game and signing in again should restore it. [Add your actual support contact here for edge cases.]</p>
-      <p class="panel-sub"><strong>How does the Player Market work?</strong> List a skin you own for gold in the Shop tab; other players can buy it there. A small fee applies when a sale completes.</p>
-      <p class="panel-sub"><strong>Something's not working.</strong> [Add your support email, Discord, or other contact channel here.]</p>
+      <p class="panel-sub"><strong>How do I earn gold?</strong> Solve word puzzles in the Puzzle tab, collect daily income from your buildings in the City tab, and fulfill requests from your Tribe.</p>
+      <p class="panel-sub"><strong>What are gems for?</strong> Gems are bought with real Pi and are spent on cosmetics and convenience items — never on skipping a puzzle or buying a building outright, so progress always stays earned through play.</p>
+      <p class="panel-sub"><strong>How does the Patron pass work?</strong> The Patron pass is a paid perk purchased with Pi that unlocks ongoing bonuses. Check the Shop tab for exactly what it includes and how long it lasts.</p>
+      <p class="panel-sub"><strong>I lost my progress — can I get it back?</strong> Your kingdom is saved automatically to our servers whenever you're signed in through the Pi Browser. Reopening the game and signing in with the same Pi account should restore everything. If it doesn't, contact support with your Pi username and roughly when you last played.</p>
+      <p class="panel-sub"><strong>How does the Player Market work?</strong> List a skin or cosmetic you own for gold in the Shop tab; other players can buy it there. A small commission applies when a sale completes, and completed trades are final.</p>
+      <p class="panel-sub"><strong>How does gifting work?</strong> You can send badges, frames, or a short message to other players from the Leaderboard. Gifts you've sent and received are kept in your gift history.</p>
+      <p class="panel-sub"><strong>I made a Pi payment but didn't receive my item.</strong> This is usually a temporary delay — reopen the app and check the Shop tab first. If it still hasn't arrived after a few minutes, contact support with your Pi username, the item, and the approximate time of payment, and we'll sort it out.</p>
+      <p class="panel-sub"><strong>I found a bug or someone is cheating.</strong> Please report it to support rather than exploiting it — see our Fair Play policy in Terms of Use.</p>
+      <p class="panel-sub"><strong>Something's not working / other questions.</strong> Reach us at codenomad213@gmail.com and we'll help as soon as we can.</p>
     `,
   };
 
